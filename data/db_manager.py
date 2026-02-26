@@ -3,6 +3,10 @@ import json
 from datetime import datetime
 import psycopg2
 from psycopg2 import extras
+from dotenv import load_dotenv
+
+# datos del .env cargar las variables de entorno del ambiente 
+load_dotenv()
 
 class DBManager:  
     """
@@ -12,11 +16,11 @@ class DBManager:
     def __init__(self):
         # 🔑 USA TUS CREDENCIALES POR SEPARADO AQUÍ
         self.db_config = {
-            "host": "aws-1-us-east-2.pooler.supabase.com",
-            "database": "postgres",
-            "user": "postgres.htyozulocovuxgwykzqn",
-            "password": "EdwinApex2026", 
-            "port": "6543",
+            "host": os.getenv("DB_HOST"),
+            "database": os.getenv("DB_NAME"),
+            "user": os.getenv("DB_USER"),
+            "password": os.getenv("DB_PASS"), 
+            "port": "6543" ,
             "connect_timeout": 10  # Para que no se quede colgado esperando
         }
         self.crear_tablas()
