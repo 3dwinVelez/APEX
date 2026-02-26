@@ -203,11 +203,15 @@ class DBManager:
             return False
 
     def obtener_lista_personal(self):
-        """Retorna lista de (nombre, rol, salario_base, id_interno)"""
-        with self.conectar() as conn:
+        """Retorna lista optimizada - Cierre de conexión garantizado"""
+        conn = self.conectar()
+        if not conn: return []
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT nombre, rol, salario_base, id_interno FROM usuarios ORDER BY nombre")
             return cursor.fetchall()
+        finally:
+            conn.close()
 
     def obtener_personal_completo(self):
         """Retorna todos los campos de usuarios para selects complejos"""
@@ -253,6 +257,23 @@ class DBManager:
     # ==========================================================
 
     def registrar_asistencia_db(self, usuario, tipo, placa):
+        """Usa la hora del servidor para evitar desfases entre tus 2 equipos"""
+        try:
+            with self.conectar() as conn:
+                with conn.cursor() as cursor:
+                    # Usamos CURRENT_DATE y TO_CHAR(NOW()...) para precisión total
+                    cursor.execute(
+                        """INSERT INTO asistencia 
+                           (usuario, vehiculo_placa, tipo_marca, hora, fecha) 
+                           VALUES (%s, %s, %s, TO_CHAR(NOW(), 'HH12:MI:SS AM'), CURRENT_DATE)""",
+                        (usuario, placa, tipo)
+                    )
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"❌ Error al registrar asistencia: {e}")
+            return False
+
         """
         Registra una marca (entrada, almuerzo, etc.) amarrada a un vehículo específico
         Args:
@@ -262,23 +283,7 @@ class DBManager:
         Returns:
             bool: True si éxito
         """
-        ahora = datetime.now()
-        fecha = ahora.strftime("%Y-%m-%d")
-        hora = ahora.strftime("%I:%M:%S %p")
-        try:
-            with self.conectar() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """INSERT INTO asistencia 
-                       (usuario, vehiculo_placa, tipo_marca, hora, fecha) 
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (usuario, placa, tipo, hora, fecha)
-                )
-                conn.commit()
-                return True
-        except Exception as e:
-            print(f"❌ Error al registrar asistencia: {e}")
-            return False
+        
 
     def obtener_planes_empleado(self, nombre_usuario):
         """
@@ -307,31 +312,34 @@ class DBManager:
             return []
 
     def obtener_marcas_por_vehiculo(self, usuario, placa):
-        """
-        Trae las marcas de hoy filtradas por usuario Y vehículo
-        Args:
-            usuario: Nombre del usuario
-            placa: Placa del vehículo
-        Returns:
-            dict: {tipo_marca: hora}
-        """
+        """Optimización de marcas del día"""
         fecha_hoy = datetime.now().strftime("%Y-%m-%d")
         marcas = {}
+        conn = self.conectar()
+        if not conn: return {}
         try:
-            with self.conectar() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """SELECT tipo_marca, hora FROM asistencia 
-                       WHERE usuario = %s AND vehiculo_placa = %s AND fecha = %s
-                       ORDER BY id""",
-                    (usuario, placa, fecha_hoy)
-                )
-                for tipo, hora in cursor.fetchall():
-                    marcas[tipo] = hora
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT tipo_marca, hora FROM asistencia 
+                   WHERE usuario = %s AND vehiculo_placa = %s AND fecha = %s
+                   ORDER BY id""",
+                (usuario, placa, fecha_hoy)
+            )
+            for tipo, hora in cursor.fetchall():
+                marcas[tipo] = hora
             return marcas
-        except Exception as e:
-            print(f"❌ Error obteniendo marcas: {e}")
-            return {}
+        finally:
+            conn.close()
+        
+    """
+    Trae las marcas de hoy filtradas por usuario Y vehículo
+        Args:
+        usuario: Nombre del usuario
+        placa: Placa del vehículo
+        Returns:
+        dict: {tipo_marca: hora}
+    """
+
 
     def obtener_ultima_marca_por_vehiculo(self, usuario, placa):
         """
