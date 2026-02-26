@@ -1,40 +1,47 @@
 import os
-import sqlite3
-from sqlite3 import Error
 import json 
 from datetime import datetime
+import psycopg2
+from psycopg2 import extras
 
-class DBManager:
+class DBManager:  
     """
-    🗄️ GESTOR DE BASE DE DATOS APEX
+    🗄️ GESTOR DE BASE DE DATOS APEX - VERSIÓN NUBE (PostgreSQL)
     Clase encargada de la persistencia de datos (Motor de APEX)
-    """
-    
+    """ 
     def __init__(self):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.db_path = os.path.join(base_dir, "apex.db")
+        # 🔑 USA TUS CREDENCIALES POR SEPARADO AQUÍ
+        self.db_config = {
+            "host": "aws-1-us-east-2.pooler.supabase.com",
+            "database": "postgres",
+            "user": "postgres.htyozulocovuxgwykzqn",
+            "password": "EdwinApex2026", 
+            "port": "6543",
+            "connect_timeout": 10  # Para que no se quede colgado esperando
+        }
         self.crear_tablas()
-        self.actualizar_estructura_personal()  # Asegurar columnas nuevas
+        self.actualizar_estructura_personal()
 
     def conectar(self):
-        """Establece una conexión con SQLite"""
+        """Establece conexión limpia usando el diccionario de configuración"""
         try:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row  # Para acceder por nombre de columna
+            # Desempaquetamos el diccionario con **
+            conn = psycopg2.connect(**self.db_config)
             return conn
-        except Error as e:
-            print(f"❌ Error al conectar a la base de datos: {e}")
+        except Exception as e:
+            print(f"❌ Error de sincronía con la nube: {e}")
             return None
-
+    
     # ==========================================================
     # ⚙️ SECCIÓN: INICIALIZACIÓN (Afecta a todo el Sistema)
     # ==========================================================
     def crear_tablas(self):
-        """Crea la estructura completa de APEX"""
+        """Crea la estructura completa de APEX en PostgreSQL"""
         
+        # Nota: Cambiamos AUTOINCREMENT por SERIAL y ? por %s (Sintaxis Postgres)
         sql_usuarios = """ 
         CREATE TABLE IF NOT EXISTS usuarios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 nombre TEXT,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
@@ -49,7 +56,7 @@ class DBManager:
 
         sql_maestro_referencias = """
         CREATE TABLE IF NOT EXISTS maestro_referencias (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 nombre_referencia TEXT NOT NULL,
                 descripcion TEXT,
                 costo_mano_obra REAL DEFAULT 0,
@@ -58,21 +65,21 @@ class DBManager:
 
         sql_ordenes_servicio = """
         CREATE TABLE IF NOT EXISTS ordenes_servicio (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 tecnico_id INTEGER,
                 referencia_id INTEGER,
                 fecha_creacion TEXT,
                 costo_aplicado REAL,
                 estado TEXT DEFAULT 'abierto',
-                novedades_json TEXT,  -- ✅ AÑADIDO: Guardar novedades de inspección
-                tiempo_total REAL DEFAULT 0,  -- ✅ AÑADIDO: Tiempo total del servicio
+                novedades_json TEXT,
+                tiempo_total REAL DEFAULT 0,
                 FOREIGN KEY (tecnico_id) REFERENCES usuarios (id),
                 FOREIGN KEY (referencia_id) REFERENCES maestro_referencias (id)
         ); """
 
         sql_vehiculos = """
         CREATE TABLE IF NOT EXISTS vehiculos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 placa TEXT UNIQUE NOT NULL,
                 modelo TEXT,
                 estado TEXT DEFAULT 'disponible'
@@ -80,7 +87,7 @@ class DBManager:
 
         sql_programacion_labores = """
         CREATE TABLE IF NOT EXISTS programacion_labores (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 fecha TEXT NOT NULL,
                 vehiculo_id INTEGER,
                 usuario_id INTEGER,
@@ -91,18 +98,18 @@ class DBManager:
         
         sql_asistencia = """
             CREATE TABLE IF NOT EXISTS asistencia (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 usuario TEXT,
                 vehiculo_placa TEXT,
                 tipo_marca TEXT, 
                 hora TEXT,
                 fecha TEXT,
-                timestamp_unix REAL DEFAULT (strftime('%s', 'now'))  -- ✅ AÑADIDO: Para cálculos precisos
+                timestamp_unix REAL DEFAULT EXTRACT(EPOCH FROM NOW())
             ); """
         
         sql_planeacion_rutas = """
             CREATE TABLE IF NOT EXISTS planeacion_rutas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 fecha TEXT,
                 vehiculo_placa TEXT,
                 empleados_json TEXT,
@@ -123,41 +130,41 @@ class DBManager:
                 cursor.execute(sql_asistencia)
                 cursor.execute(sql_planeacion_rutas)
                 
-                # Insertar usuario admin por defecto si no existe
                 cursor.execute("SELECT COUNT(*) FROM usuarios")
                 if cursor.fetchone()[0] == 0:
                     cursor.execute("""
                         INSERT INTO usuarios 
                         (nombre, username, password, rol, salario_base, id_interno) 
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         """,
                         ("Administrador", "admin", "1234", "admin", 0, "APXADM001"))
                 conn.commit()
-                print("✅ Base de datos inicializada correctamente")
-            except Error as e:
-                print(f"❌ Error creando tablas: {e}")
+                print("✅ Maquinaria APEX sincronizada con la Nube")
+            except Exception as e:
+                print(f"❌ Error creando tablas en nube: {e}")
             finally:
                 conn.close()
 
     def actualizar_estructura_personal(self):
-        """Migración dinámica de columnas Pro (DNA APEX)"""
+        """Migración dinámica con protección de conexión"""
         columnas = [
-            ("documento", "TEXT"),
-            ("id_interno", "TEXT"), 
-            ("empresa", "TEXT"),
-            ("salario_base", "REAL"), 
-            ("tasa_extra", "REAL"), 
-            ("costo_servicio", "REAL")
+            ("documento", "TEXT"), ("id_interno", "TEXT"), 
+            ("empresa", "TEXT"), ("salario_base", "REAL"), 
+            ("tasa_extra", "REAL"), ("costo_servicio", "REAL")
         ]
-        with self.conectar() as conn:
-            cursor = conn.cursor()
-            for nombre_col, tipo in columnas:
-                try:
-                    cursor.execute(f"ALTER TABLE usuarios ADD COLUMN {nombre_col} {tipo}")
-                    print(f"✅ Columna {nombre_col} agregada")
-                except:
-                    pass  # La columna ya existe
-            conn.commit()
+        conn = self.conectar()
+        if conn: # <--- AGREGAMOS ESTA VALIDACIÓN
+            try:
+                cursor = conn.cursor()
+                for nombre_col, tipo in columnas:
+                    try:
+                        cursor.execute(f"ALTER TABLE usuarios ADD COLUMN {nombre_col} {tipo}")
+                    except:
+                        conn.rollback()
+                        continue
+                conn.commit()
+            finally:
+                conn.close()
 
     # ==========================================================
     # 👥 SECCIÓN: GESTIÓN DE PERSONAL
@@ -173,7 +180,7 @@ class DBManager:
         """
         sql = """INSERT OR REPLACE INTO usuarios 
                  (nombre, username, password, rol, documento, empresa, id_interno, costo_servicio, salario_base, tasa_extra) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         try:
             with self.conectar() as conn:
                 cursor = conn.cursor()
@@ -214,7 +221,7 @@ class DBManager:
             with self.conectar() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE usuarios SET nombre=?, rol=?, salario_base=? WHERE nombre=?", 
+                    "UPDATE usuarios SET nombre=%s, rol=%s, salario_base=%s WHERE nombre=%s", 
                     (nuevo_nombre, rol, salario, nombre_original)
                 )
                 conn.commit()
@@ -227,7 +234,7 @@ class DBManager:
         try:
             with self.conectar() as conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM usuarios WHERE nombre=?", (nombre,))
+                cursor.execute("DELETE FROM usuarios WHERE nombre=%s", (nombre,))
                 conn.commit()
                 return True
         except Exception as e:
@@ -237,7 +244,7 @@ class DBManager:
     def contar_usuarios_por_rol(self, rol):
         with self.conectar() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM usuarios WHERE rol = ?", (rol.lower(),))
+            cursor.execute("SELECT COUNT(*) FROM usuarios WHERE rol = %s", (rol.lower(),))
             res = cursor.fetchone()
             return res[0] if res else 0
 
@@ -264,7 +271,7 @@ class DBManager:
                 cursor.execute(
                     """INSERT INTO asistencia 
                        (usuario, vehiculo_placa, tipo_marca, hora, fecha) 
-                       VALUES (?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s)""",
                     (usuario, placa, tipo, hora, fecha)
                 )
                 conn.commit()
@@ -287,7 +294,7 @@ class DBManager:
             with self.conectar() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT vehiculo_placa, empleados_json FROM planeacion_rutas WHERE fecha = ?", 
+                    "SELECT vehiculo_placa, empleados_json FROM planeacion_rutas WHERE fecha = %s", 
                     (fecha_hoy,)
                 )
                 for placa, emps_json in cursor.fetchall():
@@ -315,7 +322,7 @@ class DBManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """SELECT tipo_marca, hora FROM asistencia 
-                       WHERE usuario = ? AND vehiculo_placa = ? AND fecha = ?
+                       WHERE usuario = %s AND vehiculo_placa = %s AND fecha = %s
                        ORDER BY id""",
                     (usuario, placa, fecha_hoy)
                 )
@@ -341,7 +348,7 @@ class DBManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """SELECT tipo_marca FROM asistencia 
-                       WHERE usuario = ? AND vehiculo_placa = ? AND fecha = ? 
+                       WHERE usuario = %s AND vehiculo_placa = %s AND fecha = %s 
                        ORDER BY id DESC LIMIT 1""",
                     (usuario, placa, fecha_hoy)
                 )
@@ -375,17 +382,17 @@ class DBManager:
 
         # Agregar condiciones SOLO si el filtro NO es None
         if fecha is not None:
-            condiciones.append("fecha = ?")
+            condiciones.append("fecha = %s")
             params.append(fecha)
             print(f"   ➕ Filtro fecha: {fecha}")
         
         if placa is not None:
-            condiciones.append("vehiculo_placa = ?")
+            condiciones.append("vehiculo_placa = %s")
             params.append(placa)
             print(f"   ➕ Filtro placa: {placa}")
         
         if empleado is not None:
-            condiciones.append("empleados_json LIKE ?")
+            condiciones.append("empleados_json LIKE %s")
             params.append(f'%"{empleado}"%')
             print(f"   ➕ Filtro empleado: {empleado}")
         
@@ -453,7 +460,7 @@ class DBManager:
                 cursor.execute(
                     """INSERT INTO planeacion_rutas 
                        (fecha, vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog) 
-                       VALUES (?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s)""",
                     (fecha, placa, json.dumps(empleados), h_inicio, h_fin)
                 )
                 conn.commit()
@@ -471,7 +478,7 @@ class DBManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """SELECT vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog 
-                       FROM planeacion_rutas WHERE fecha = ?""", 
+                       FROM planeacion_rutas WHERE fecha = %s""", 
                     (fecha_hoy,)
                 )
                 for placa, emps_json, hi, hf in cursor.fetchall():
@@ -496,7 +503,7 @@ class DBManager:
             with self.conectar() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO vehiculos (placa, modelo, estado) VALUES (?, ?, 'disponible')", 
+                    "INSERT INTO vehiculos (placa, modelo, estado) VALUES (%s, %s, 'disponible')", 
                     (placa.upper(), modelo)
                 )
                 conn.commit()
@@ -542,7 +549,7 @@ class DBManager:
                 cursor.execute(
                     """INSERT INTO maestro_referencias 
                        (nombre_referencia, descripcion, costo_mano_obra, piezas_json) 
-                       VALUES (?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s)""",
                     (nombre, descripcion, costo, piezas_json)
                 )
                 conn.commit()
@@ -556,7 +563,7 @@ class DBManager:
         with self.conectar() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM maestro_referencias WHERE id = ?", 
+                "SELECT * FROM maestro_referencias WHERE id = %s", 
                 (ref_id,)
             )
             return cursor.fetchone()
@@ -574,7 +581,7 @@ class DBManager:
                 cursor.execute(
                     """INSERT INTO ordenes_servicio 
                        (tecnico_id, referencia_id, fecha_creacion, estado) 
-                       VALUES (?, ?, ?, 'abierto')""",
+                       VALUES (%s, %s, %s, 'abierto')""",
                     (tecnico_id, referencia_id, fecha_actual)
                 )
                 conn.commit()
@@ -590,8 +597,8 @@ class DBManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """UPDATE ordenes_servicio 
-                       SET estado = 'cerrado', novedades_json = ?, tiempo_total = ? 
-                       WHERE id = ?""",
+                       SET estado = 'cerrado', novedades_json = %s, tiempo_total = %s 
+                       WHERE id = %s""",
                     (novedades_json, tiempo_total, orden_id)
                 )
                 conn.commit()
@@ -609,7 +616,7 @@ class DBManager:
         with self.conectar() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, nombre, rol, username FROM usuarios WHERE username = ? AND password = ?", 
+                "SELECT id, nombre, rol, username FROM usuarios WHERE username = %s AND password = %s", 
                 (username, password)
             )
             row = cursor.fetchone()
@@ -634,15 +641,15 @@ class DBManager:
         """Obtiene rutas en un rango de fechas"""
         query = """SELECT fecha, vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog 
                 FROM planeacion_rutas 
-                WHERE fecha BETWEEN ? AND ?"""
+                WHERE fecha BETWEEN %s AND %s"""
         params = [fecha_ini, fecha_fin]
         
         if placa:
-            query += " AND vehiculo_placa = ?"
+            query += " AND vehiculo_placa = %s"
             params.append(placa)
         
         if empleado:
-            query += " AND empleados_json LIKE ?"
+            query += " AND empleados_json LIKE %s"
             params.append(f'%"{empleado}"%')
         
         query += " ORDER BY fecha DESC"
@@ -672,9 +679,14 @@ class DBManager:
             cursor.execute("""
                 SELECT fecha, tipo_marca, hora 
                 FROM asistencia 
-                WHERE usuario = ? AND vehiculo_placa = ? 
-                AND fecha BETWEEN ? AND ?
+                WHERE usuario = %s AND vehiculo_placa = %s 
+                AND fecha BETWEEN %s AND %s
                 ORDER BY fecha, id
             """, (usuario, placa, fecha_ini, fecha_fin))
             
             return [{"fecha": r[0], "tipo": r[1], "hora": r[2]} for r in cursor.fetchall()]
+
+# Este bloque es el "encendido" de la maquinaria
+if __name__ == "__main__":
+    print("🚀 Iniciando secuencia de conexión APEX...")
+    manager = DBManager()
