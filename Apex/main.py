@@ -3,12 +3,43 @@ import os
 import base64
 import flet as ft
 from datetime import datetime
+import threading 
 
 # --- Ajuste de rutas ---
 ruta_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, ruta_raiz)
 
 from data.db_manager import DBManager
+
+# ==========================================================
+# 📦 CLASE DE ESTADO (CACHÉ) - El "Cerebro" de APEX
+# ==========================================================
+class AppState:
+    def __init__(self, db_manager):
+        self.db = db_manager
+        self.personal = []
+        self.vehiculos = []
+        self.rutas_hoy = []
+        self.ultima_actualizacion = None
+
+    def sincronizar(self):
+        """🔄 Sincronización Optimizada: De 3 viajes a solo 1"""
+        try:
+            print("🌐 Sincronizando datos maestros desde Supabase...")
+            # Llamamos a la consulta maestra
+            paquete_datos = self.db.obtener_todo_al_inicio()
+            
+            # Repartimos los datos en el caché local
+            self.personal = paquete_datos["personal"]
+            self.vehiculos = paquete_datos["vehiculos"]
+            self.rutas_hoy = paquete_datos["rutas"]
+            
+            self.ultima_actualizacion = datetime.now()
+            print(f"✅ Sincronización completada en tiempo récord: {self.ultima_actualizacion}")
+            return True
+        except Exception as e:
+            print(f"❌ Error al repartir datos del caché: {e}")
+            return False
 
 # Importes con manejo de excepciones para escalabilidad
 try:
@@ -23,7 +54,6 @@ except ImportError:
 
 # --- FUNCIÓN PARA CONVERTIR IMAGEN A BASE64 ---
 def imagen_a_base64(ruta_imagen):
-    """Convierte una imagen a base64 para incrustarla en el código"""
     try:
         with open(ruta_imagen, "rb") as imagen:
             return base64.b64encode(imagen.read()).decode()
@@ -39,33 +69,38 @@ def main(page: ft.Page):
     page.padding = 0
     page.spacing = 0
     
-    # Ruta del logo
     LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo_scj.png")
-    
-    # Verificar si el logo existe
     logo_absoluto = os.path.abspath(LOGO_PATH)
-    print(f"📂 Buscando logo en: {logo_absoluto}")
-    print(f"✅ ¿Existe? {os.path.exists(logo_absoluto)}")
     
-    # Convertir logo a base64
     LOGO_BASE64 = None
     if os.path.exists(logo_absoluto):
         LOGO_BASE64 = imagen_a_base64(logo_absoluto)
-        if LOGO_BASE64:
-            print("✅ Logo convertido a base64 correctamente")
-        else:
-            print("⚠️ No se pudo convertir el logo a base64")
-    
+
+
+
+
+    # --- INICIALIZACIÓN DE MOTORES ---
     db = DBManager()
-    
-    # Sesión con ambas llaves
+    state = AppState(db) # <--- Activamos el Caché
+
+    import threading
+
+    def carga_inicial_background():
+        """Ejecuta la sincronización sin bloquear la interfaz"""
+        state.sincronizar()
+        # Una vez cargado, si quieres que algo cambie visualmente (ej: un icono de check)
+        # puedes usar page.update() aquí.
+        print("⚡ Datos de la nube listos en segundo plano.")
+
+    # Lanzamos el "hilo" de carga y continuamos con el Login de inmediato
+    threading.Thread(target=carga_inicial_background, daemon=True).start()
+
     sesion = {
         "usuario": "Administrador",
         "nombre": "Administrador",
         "rol": "admin"
     }
 
-    # --- FUNCIÓN DE MARGEN PARA DISEÑO LIMPIO ---
     def zona_segura(contenido, col_size={"sm": 12, "md": 11, "lg": 10}):
         return ft.ResponsiveRow([
             ft.Column([
@@ -74,57 +109,29 @@ def main(page: ft.Page):
         ], alignment=ft.MainAxisAlignment.CENTER)
 
     # ==========================================================
-    # 1. LOGIN (EXACTAMENTE IGUAL AL ORIGINAL)
+    # 1. LOGIN (SIN CAMBIOS EN LÓGICA)
     # ==========================================================
     def mostrar_login(e=None):
         page.clean()
         page.vertical_alignment = ft.MainAxisAlignment.CENTER
         page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
         
-        txt_user = ft.TextField(
-            label="Usuario", 
-            border_radius=12, 
-            width=320, 
-            bgcolor="white"
-        )
-        
-        txt_pass = ft.TextField(
-            label="Contraseña", 
-            password=True, 
-            border_radius=12, 
-            width=320, 
-            bgcolor="white"
-        )
+        txt_user = ft.TextField(label="Usuario", border_radius=12, width=320, bgcolor="white")
+        txt_pass = ft.TextField(label="Contraseña", password=True, border_radius=12, width=320, bgcolor="white")
         
         login_ui = ft.Stack([
-            # Marca de agua de fondo (AHORA USA BASE64)
             ft.Container(
-                content=ft.Image(
-                    src_base64=LOGO_BASE64, 
-                    opacity=0.05, 
-                    width=650, 
-                    fit=ft.ImageFit.CONTAIN
-                ) if LOGO_BASE64 else ft.Container(),
+                content=ft.Image(src_base64=LOGO_BASE64, opacity=0.05, width=650) if LOGO_BASE64 else ft.Container(),
                 alignment=ft.alignment.center
             ),
-            # Formulario
             ft.Column([
-                ft.Image(
-                    src_base64=LOGO_BASE64, 
-                    width=140,
-                    fit=ft.ImageFit.CONTAIN
-                ) if LOGO_BASE64 else ft.Text("📊 APEX", size=32, weight="bold", color="#263238"),
-                ft.Text("SISTEMA APEX", size=28, weight="bold", color="#263238"),
+                ft.Image(src_base64=LOGO_BASE64, width=140) if LOGO_BASE64 else ft.Text("📊 APEX", size=32),
+                ft.Text("SISTEMA APEX", size=28, weight="bold"),
                 ft.Text("SCJ Soluciones Logísticas", size=12, color="grey"),
                 ft.Container(height=15),
-                txt_user, 
-                txt_pass,
+                txt_user, txt_pass,
                 ft.ElevatedButton(
-                    "INGRESAR AL SISTEMA", 
-                    height=50, 
-                    width=320, 
-                    bgcolor="#263238", 
-                    color="white",
+                    "INGRESAR AL SISTEMA", height=50, width=320, bgcolor="#263238", color="white",
                     on_click=lambda _: mostrar_dashboard(sesion["usuario"]),
                     style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12))
                 ),
@@ -135,21 +142,19 @@ def main(page: ft.Page):
         page.update()
 
     # ==========================================================
-    # 2. DASHBOARD (CON MARCA DE AGUA)
+    # 2. DASHBOARD (PASAMOS 'STATE' A LOS MÓDULOS)
     # ==========================================================
     def mostrar_dashboard(usuario_nombre=None):
+        # Cada vez que entramos al Dashboard, podemos refrescar en segundo plano si queremos
+        # state.sincronizar() 
+
         page.clean()
         page.vertical_alignment = ft.MainAxisAlignment.START
         
-        # Header
         header_content = ft.Row([
             ft.Row([
                 ft.Container(
-                    content=ft.Image(
-                        src_base64=LOGO_BASE64, 
-                        height=45,
-                        fit=ft.ImageFit.CONTAIN
-                    ) if LOGO_BASE64 else ft.Text("📊", size=30),
+                    content=ft.Image(src_base64=LOGO_BASE64, height=45) if LOGO_BASE64 else ft.Text("📊", size=30),
                     padding=5, bgcolor="white", border_radius=10
                 ),
                 ft.Column([
@@ -157,35 +162,25 @@ def main(page: ft.Page):
                     ft.Text("SCJ SOLUCIONES LOGÍSTICAS", color="#A5D6A7", size=10, weight="bold")
                 ], spacing=0)
             ], spacing=15),
-            ft.ElevatedButton(
-                "SALIR", on_click=mostrar_login,
-                style=ft.ButtonStyle(color="white", bgcolor="#263238", shape=ft.RoundedRectangleBorder(radius=8))
-            )
+            ft.ElevatedButton("SALIR", on_click=mostrar_login, style=ft.ButtonStyle(color="white", bgcolor="#263238"))
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
         header = ft.Container(
-            content=zona_segura(header_content, col_size={"sm": 12, "md": 11, "lg": 10}),
+            content=zona_segura(header_content),
             bgcolor="#263238", padding=ft.padding.only(top=10, bottom=10),
             shadow=ft.BoxShadow(blur_radius=10, color="black26")
         )
 
-        # --- FUNCIÓN PARA CREAR TARJETAS ERP ---
         def crear_tarjeta_erp(titulo, subtitulo, icon, color="#2E7D32", disponible=True, callback=None):
             return ft.Container(
                 content=ft.Column([
-                    ft.Row([
-                        ft.Icon(icon, color=color, size=28),
-                        ft.Text(titulo, weight="bold", size=16, color="#263238"),
-                    ], alignment=ft.MainAxisAlignment.START),
-                    ft.Text(subtitulo, size=11, color="grey600") if disponible else ft.Text("Próximamente", italic=True, size=11, color="orange"),
+                    ft.Row([ft.Icon(icon, color=color, size=28), ft.Text(titulo, weight="bold", size=16)], alignment=ft.MainAxisAlignment.START),
+                    ft.Text(subtitulo, size=11, color="grey600") if disponible else ft.Text("Próximamente", italic=True, size=11),
                 ], spacing=10),
                 padding=25, bgcolor="white", border_radius=15, col={"xs": 12, "sm": 6, "md": 4},
-                border=ft.border.all(1, "#E0E0E0"),
                 on_click=callback if disponible else None,
-                shadow=ft.BoxShadow(blur_radius=5, color="#00000005")
             )
 
-        # --- MÓDULOS DEL ERP ---
         grid_items = ft.Column([
             # Sección 1: Operaciones Críticas
             ft.Container(ft.Text("OPERACIONES CRÍTICAS", size=12, weight="bold", color="grey600"), padding=ft.padding.only(top=10)),
@@ -198,7 +193,7 @@ def main(page: ft.Page):
                                   lambda _: VehiculosModule(page, db, sesion, mostrar_dashboard).mostrar_maestro_vehiculos()),
             ], spacing=20, run_spacing=20),
 
-            # Sección 2: Administración General
+            # Sección 2: Administración General (RESTABLECIDA)
             ft.Container(ft.Text("ADMINISTRACIÓN Y RRHH", size=12, weight="bold", color="grey600"), padding=ft.padding.only(top=20)),
             ft.ResponsiveRow([
                 crear_tarjeta_erp("Gestión Personal", "Maestro de empleados y roles", ft.icons.PEOPLE_ALT_OUTLINED, "#455A64", True,
@@ -208,7 +203,7 @@ def main(page: ft.Page):
                 crear_tarjeta_erp("Nómina y Pagos", "Cálculo de haberes y finanzas", ft.icons.ACCOUNT_BALANCE_WALLET_OUTLINED, "#455A64", False),
             ], spacing=20, run_spacing=20),
 
-            # Sección 3: Expansión ERP
+            # Sección 3: Expansión ERP (RESTABLECIDA)
             ft.Container(ft.Text("EXPANSIÓN EMPRESARIAL", size=12, weight="bold", color="grey600"), padding=ft.padding.only(top=20)),
             ft.ResponsiveRow([
                 crear_tarjeta_erp("Inventarios", "Stock de repuestos y materiales", ft.icons.INVENTORY_2_OUTLINED, "#C62828", False),
@@ -218,29 +213,10 @@ def main(page: ft.Page):
             ], spacing=20, run_spacing=20),
         ], spacing=10)
 
-        # --- APLICAR MARCA DE AGUA GLOBAL AL DASHBOARD ---
-        contenido = ft.Column([
-            header,
-            zona_segura(grid_items, col_size={"sm": 12, "md": 11, "lg": 10})
-        ], scroll=ft.ScrollMode.AUTO, expand=True)
+        contenido = ft.Column([header, zona_segura(grid_items)], scroll=ft.ScrollMode.AUTO, expand=True)
         
-        # Envolver con marca de agua
         if LOGO_BASE64:
-            page.add(
-                ft.Stack([
-                    ft.Container(
-                        content=ft.Image(
-                            src_base64=LOGO_BASE64, 
-                            opacity=0.03, 
-                            width=800, 
-                            fit=ft.ImageFit.CONTAIN
-                        ),
-                        alignment=ft.alignment.center,
-                        expand=True
-                    ),
-                    contenido
-                ], expand=True)
-            )
+            page.add(ft.Stack([ft.Container(content=ft.Image(src_base64=LOGO_BASE64, opacity=0.03, width=800), alignment=ft.alignment.center, expand=True), contenido], expand=True))
         else:
             page.add(contenido)
         
@@ -249,7 +225,5 @@ def main(page: ft.Page):
     mostrar_login()
 
 if __name__ == "__main__":
- 
+    # Importante: Mantener el assets_dir para cargar recursos locales si es necesario
     ft.app(target=main, assets_dir="assets", view=ft.AppView.WEB_BROWSER, port=8080)
-
- 

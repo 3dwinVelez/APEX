@@ -694,6 +694,56 @@ class DBManager:
             
             return [{"fecha": r[0], "tipo": r[1], "hora": r[2]} for r in cursor.fetchall()]
 
+
+    # ==========================================================
+    #  SECCIÓN: MEJORAS DE PERFORMANCE 
+    # ==========================================================
+
+    def obtener_todo_al_inicio(self):
+        """
+        ⚡ CONSULTA MAESTRA (Turbo Boost): 
+        Carga Personal, Vehículos y Rutas en un solo viaje a la nube.
+        """
+        # Estructura de datos inicial por si la conexión falla
+        datos = {
+            "personal": [],
+            "vehiculos": [],
+            "rutas": []
+        }
+        
+        conn = self.conectar()
+        if not conn:
+            return datos
+            
+        try:
+            # Usamos un solo cursor para todas las consultas
+            with conn.cursor() as cursor:
+                # 1. 👥 Cargar Personal
+                cursor.execute("SELECT nombre, rol, salario_base, id_interno FROM usuarios ORDER BY nombre")
+                datos["personal"] = cursor.fetchall()
+                
+                # 2. 🚛 Cargar Vehículos
+                cursor.execute("SELECT id, placa, modelo, estado FROM vehiculos ORDER BY placa")
+                datos["vehiculos"] = cursor.fetchall()
+                
+                # 3. 📅 Cargar Rutas del Día
+                fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+                cursor.execute("""
+                    SELECT vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog 
+                    FROM planeacion_rutas 
+                    WHERE fecha = %s
+                """, (fecha_hoy,))
+                datos["rutas"] = cursor.fetchall()
+                
+            return datos
+            
+        except Exception as e:
+            print(f"❌ Error en Consulta Maestra: {e}")
+            return datos
+        finally:
+            # 🔌 Cerramos la puerta de la conexión siempre
+            conn.close()
+
 # Este bloque es el "encendido" de la maquinaria
 if __name__ == "__main__":
     print("🚀 Iniciando secuencia de conexión APEX...")
