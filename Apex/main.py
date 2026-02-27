@@ -58,6 +58,7 @@ except ImportError as e:
 
 def main(page: ft.Page):
     # --- CONFIGURACIÓN ESTÉTICA ---
+    LOGO_URL = "logo_scj.png" 
     page.title = "APEX ERP | SCJ Soluciones Logísticas"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.bgcolor = "#F0F2F5"
@@ -67,8 +68,7 @@ def main(page: ft.Page):
     # --- CONFIGURACIÓN DE LOGO PARA WEB ---
     # Al definir assets_dir="assets" al final del archivo, 
     # solo necesitas poner el nombre del archivo con una barra inicial.
-    LOGO_URL = "logo_scj.png" 
-
+   
  
     # --- INICIALIZACIÓN DE MOTORES ---
     db = DBManager()
@@ -217,17 +217,16 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     import os
-    # Importante: Mantener el assets_dir para cargar recursos locales si es necesario
-    # ft.app(target=main, assets_dir="assets", view=ft.AppView.WEB_BROWSER, port=8080)
     port = int(os.getenv("PORT", 8080))
     
-    
-    path_assets = os.path.join(os.path.dirname(__file__), "assets")
+    # Esto asegura que Railway use la carpeta 'assets' que está al lado de main.py
+    curr_dir = os.path.dirname(os.path.realpath(__file__))
+    assets_path = os.path.join(curr_dir, "assets")
     
     ft.app(
         target=main, 
-        assets_dir="assets",
+        assets_dir=assets_path, # <--- Ruta absoluta para que no haya duda
         view=ft.AppView.WEB_BROWSER, 
-        host="0.0.0.0",  # Imprescindible para Railway
+        host="0.0.0.0", 
         port=port
     )
