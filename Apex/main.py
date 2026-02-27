@@ -7,10 +7,10 @@ from datetime import datetime
 
 
 # --- Ajuste de rutas ---
-directorio_actual = os.path.dirname(os.path.abspath(__file__))
-if directorio_actual not in sys.path:
-    sys.path.insert(0, directorio_actual)
-
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+    
 from data.db_manager import DBManager
 
 # ==========================================================
