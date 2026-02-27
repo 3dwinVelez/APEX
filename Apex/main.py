@@ -1,9 +1,10 @@
 import sys
 import os
-import base64
 import flet as ft
 from datetime import datetime
-import threading 
+
+
+
 
 # --- Ajuste de rutas ---
 directorio_actual = os.path.dirname(os.path.abspath(__file__))
@@ -43,6 +44,7 @@ class AppState:
             return False
 
 # Importes con manejo de excepciones para escalabilidad
+# Importes de módulos con manejo de excepciones
 try:
     from modulos.personal import PersonalModule
     from modulos.referencias import ReferenciasModule
@@ -50,9 +52,8 @@ try:
     from modulos.servicios import ServiciosModule
     from modulos.vehiculos import VehiculosModule
     from modulos.reportes import ReportesModule
-except ImportError:
-    pass
-
+except ImportError as e:
+    print(f"⚠️ Error al importar módulos: {e}")
 
 
 def main(page: ft.Page):
