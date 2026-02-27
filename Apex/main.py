@@ -228,10 +228,11 @@ if __name__ == "__main__":
     # Importante: Mantener el assets_dir para cargar recursos locales si es necesario
     # ft.app(target=main, assets_dir="assets", view=ft.AppView.WEB_BROWSER, port=8080)
     port = int(os.getenv("PORT", 8080))
-    ft.run(
-        main, 
-        assets_dir="assets", 
+    
+    ft.app(
+        target=main, 
+        assets_dir="assets",
         view=ft.AppView.WEB_BROWSER, 
-        host="0.0.0.0", 
+        host="0.0.0.0",  # Imprescindible para Railway
         port=port
     )
