@@ -6,8 +6,9 @@ from datetime import datetime
 import threading 
 
 # --- Ajuste de rutas ---
-ruta_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, ruta_raiz)
+directorio_actual = os.path.dirname(os.path.abspath(__file__))
+if directorio_actual not in sys.path:
+    sys.path.insert(0, directorio_actual)
 
 from data.db_manager import DBManager
 
@@ -52,14 +53,7 @@ try:
 except ImportError:
     pass
 
-# --- FUNCIÓN PARA CONVERTIR IMAGEN A BASE64 ---
-def imagen_a_base64(ruta_imagen):
-    try:
-        with open(ruta_imagen, "rb") as imagen:
-            return base64.b64encode(imagen.read()).decode()
-    except Exception as e:
-        print(f"⚠️ Error al convertir imagen: {e}")
-        return None
+
 
 def main(page: ft.Page):
     # --- CONFIGURACIÓN ESTÉTICA ---
@@ -69,16 +63,12 @@ def main(page: ft.Page):
     page.padding = 0
     page.spacing = 0
     
-    LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo_scj.png")
-    logo_absoluto = os.path.abspath(LOGO_PATH)
-    
-    LOGO_BASE64 = None
-    if os.path.exists(logo_absoluto):
-        LOGO_BASE64 = imagen_a_base64(logo_absoluto)
+    # --- CONFIGURACIÓN DE LOGO PARA WEB ---
+    # Al definir assets_dir="assets" al final del archivo, 
+    # solo necesitas poner el nombre del archivo con una barra inicial.
+    LOGO_URL = "/logo_scj.png" 
 
-
-
-
+ 
     # --- INICIALIZACIÓN DE MOTORES ---
     db = DBManager()
     state = AppState(db) # <--- Activamos el Caché
@@ -121,11 +111,11 @@ def main(page: ft.Page):
         
         login_ui = ft.Stack([
             ft.Container(
-                content=ft.Image(src_base64=LOGO_BASE64, opacity=0.05, width=650) if LOGO_BASE64 else ft.Container(),
+                content=ft.Image(src=LOGO_URL, opacity=0.05, width=650) if LOGO_URL else ft.Container(),
                 alignment=ft.alignment.center
             ),
             ft.Column([
-                ft.Image(src_base64=LOGO_BASE64, width=140) if LOGO_BASE64 else ft.Text("📊 APEX", size=32),
+                ft.Image(src=LOGO_URL, width=140) if LOGO_URL else ft.Text("📊 APEX", size=32),
                 ft.Text("SISTEMA APEX", size=28, weight="bold"),
                 ft.Text("SCJ Soluciones Logísticas", size=12, color="grey"),
                 ft.Container(height=15),
@@ -154,7 +144,7 @@ def main(page: ft.Page):
         header_content = ft.Row([
             ft.Row([
                 ft.Container(
-                    content=ft.Image(src_base64=LOGO_BASE64, height=45) if LOGO_BASE64 else ft.Text("📊", size=30),
+                    content=ft.Image(src=LOGO_URL, height=45) if LOGO_URL else ft.Text("📊", size=30),
                     padding=5, bgcolor="white", border_radius=10
                 ),
                 ft.Column([
@@ -215,8 +205,8 @@ def main(page: ft.Page):
 
         contenido = ft.Column([header, zona_segura(grid_items)], scroll=ft.ScrollMode.AUTO, expand=True)
         
-        if LOGO_BASE64:
-            page.add(ft.Stack([ft.Container(content=ft.Image(src_base64=LOGO_BASE64, opacity=0.03, width=800), alignment=ft.alignment.center, expand=True), contenido], expand=True))
+        if LOGO_URL:
+            page.add(ft.Stack([ft.Container(content=ft.Image(src=LOGO_URL, opacity=0.03, width=800), alignment=ft.alignment.center, expand=True), contenido], expand=True))
         else:
             page.add(contenido)
         
