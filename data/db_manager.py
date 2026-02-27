@@ -176,48 +176,33 @@ class DBManager:
     
     def registrar_usuario_full_pro(self, d):
         """
-        Registra un usuario con todos los campos profesionales.
-        Compatible con PostgreSQL (Supabase/Railway).
+        Versión simplificada para Supabase con ID autogenerado.
         """
-        # En PostgreSQL usamos 'ON CONFLICT' en lugar de 'INSERT OR REPLACE'
-        # Suponiendo que 'username' es tu llave única (UNIQUE)
         sql = """
             INSERT INTO usuarios 
             (nombre, username, password, rol, documento, empresa, id_interno, costo_servicio, salario_base, tasa_extra) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (username) 
-            DO UPDATE SET 
-                nombre = EXCLUDED.nombre,
-                password = EXCLUDED.password,
-                rol = EXCLUDED.rol,
-                documento = EXCLUDED.documento,
-                empresa = EXCLUDED.empresa,
-                id_interno = EXCLUDED.id_interno,
-                costo_servicio = EXCLUDED.costo_servicio,
-                salario_base = EXCLUDED.salario_base,
-                tasa_extra = EXCLUDED.tasa_extra
         """
         try:
             with self.conectar() as conn:
-                cursor = conn.cursor()
-                cursor.execute(sql, (
-                    d['nombre'], 
-                    d['user'], 
-                    d['pass'], 
-                    d['rol'], 
-                    d.get('doc', ''),
-                    d.get('empresa', 'APEX'), 
-                    d.get('id_interno', ''),
-                    float(d.get('costo', 0)), 
-                    float(d.get('salario', 0)), 
-                    float(d.get('extra', 0))
-                ))
-                conn.commit()
-                return True
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (
+                        d['nombre'], 
+                        d['user'], 
+                        d['pass'], 
+                        d['rol'], 
+                        d.get('doc', ''),
+                        d.get('empresa', 'APEX'), 
+                        d.get('id_interno', ''),
+                        float(d.get('costo', 0)), 
+                        float(d.get('salario', 0)), 
+                        float(d.get('extra', 0))
+                    ))
+                    conn.commit()
+                    return True
         except Exception as e:
-            print(f"❌ Error en registro DB: {e}")
-            # Si el error es por el ON CONFLICT, podrías usar un INSERT simple 
-            # mientras verificas cuál es la columna UNIQUE en tu tabla.
+            # Esto imprimirá el error exacto en los logs de Railway
+            print(f"❌ Error real en Supabase: {e}")
             return False
 
     def obtener_lista_personal(self):
