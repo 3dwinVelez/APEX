@@ -414,77 +414,92 @@ class ReportesModule:
         # TABLA DE RESULTADOS PROFESIONAL
         # ==========================================================
         # Cabecera de tabla responsive
+        # Solo muestro la parte corregida de la tabla en reporte_control_horario
+# Reemplaza la sección de tabla_resultados con esto:
+
+# ==========================================================
+# TABLA DE RESULTADOS PROFESIONAL CON SCROLL RESPONSIVE
+# ==========================================================
+# Cabecera de tabla con ancho fijo para scroll horizontal
         cabecera_tabla = ft.Container(
-            content=ft.ResponsiveRow([
-                ft.Container(ft.Text("FECHA", weight=ft.FontWeight.BOLD, size=11, color="white"), col={"xs": 2}),
-                ft.Container(ft.Text("VH", weight=ft.FontWeight.BOLD, size=11, color="white"), col={"xs": 1}),
-                ft.Container(ft.Text("EMPLEADO", weight=ft.FontWeight.BOLD, size=11, color="white"), col={"xs": 3}),
-                ft.Container(ft.Text("ENTRADA", weight=ft.FontWeight.BOLD, size=11, color="white"), col={"xs": 1.5}),
-                ft.Container(ft.Text("SALIDA", weight=ft.FontWeight.BOLD, size=11, color="white"), col={"xs": 1.5}),
-                ft.Container(ft.Text("TIEMPO", weight=ft.FontWeight.BOLD, size=11, color="white"), col={"xs": 1.5}),
-                ft.Container(ft.Text("ESTADO", weight=ft.FontWeight.BOLD, size=11, color="white"), col={"xs": 1.5}),
-            ], spacing=2),
+            content=ft.Row([
+                ft.Container(ft.Text("FECHA", weight="bold", size=11, color="white"), width=70),
+                ft.Container(ft.Text("VH", weight="bold", size=11, color="white"), width=60),
+                ft.Container(ft.Text("EMPLEADO", weight="bold", size=11, color="white"), width=120),
+                ft.Container(ft.Text("ENTRADA", weight="bold", size=11, color="white"), width=70, alignment=ft.alignment.center),
+                ft.Container(ft.Text("SALIDA", weight="bold", size=11, color="white"), width=70, alignment=ft.alignment.center),
+                ft.Container(ft.Text("TIEMPO", weight="bold", size=11, color="white"), width=60, alignment=ft.alignment.center),
+                ft.Container(ft.Text("ESTADO", weight="bold", size=11, color="white"), width=80, alignment=ft.alignment.center),
+            ], spacing=5),
             bgcolor="#1E3A5F",
             padding=12,
             border_radius=ft.border_radius.only(top_left=8, top_right=8)
         )
-        
-        # Datos de ejemplo (luego vendrán de la DB)
+
+        # Datos de ejemplo
         datos_ejemplo = [
             {"fecha": "02-24", "vh": "DMX-513", "empleado": "Administrador", "entrada": "06:11", "salida": "--", "tiempo": "02:45", "estado": "EN CURSO", "color": "#E65100"},
             {"fecha": "02-24", "vh": "NHR-385", "empleado": "Luis López", "entrada": "05:38", "salida": "00:38", "tiempo": "00:00", "estado": "COMPLETO", "color": "#1B5E20"},
-            {"fecha": "02-24", "vh": "NHR-385", "empleado": "Andrés Rodríguez", "entrada": "05:38", "salida": "00:38", "tiempo": "00:00", "estado": "COMPLETO", "color": "#1B5E20"},
         ]
-        
+
         filas_tabla = []
         for idx, dato in enumerate(datos_ejemplo):
             bg_color = "#FFFFFF" if idx % 2 == 0 else "#F8F9FA"
             
             fila = ft.Container(
-                content=ft.ResponsiveRow([
-                    ft.Container(ft.Text(dato["fecha"], size=11), col={"xs": 2}),
-                    ft.Container(ft.Text(dato["vh"], size=11, weight=ft.FontWeight.BOLD), col={"xs": 1}),
-                    ft.Container(ft.Text(dato["empleado"], size=11), col={"xs": 3}),
-                    ft.Container(ft.Text(dato["entrada"], size=11), col={"xs": 1.5}),
-                    ft.Container(ft.Text(dato["salida"], size=11), col={"xs": 1.5}),
-                    ft.Container(ft.Text(dato["tiempo"], size=11, color="#1565C0" if dato["tiempo"] != "--" else "grey"), col={"xs": 1.5}),
+                content=ft.Row([
+                    ft.Container(ft.Text(dato["fecha"], size=11), width=70),
+                    ft.Container(ft.Text(dato["vh"], size=11, weight="bold"), width=60),
+                    ft.Container(ft.Text(dato["empleado"], size=11), width=120),
+                    ft.Container(ft.Text(dato["entrada"], size=11), width=70, alignment=ft.alignment.center),
+                    ft.Container(ft.Text(dato["salida"], size=11), width=70, alignment=ft.alignment.center),
+                    ft.Container(ft.Text(dato["tiempo"], size=11, color="#1565C0" if dato["tiempo"] != "--" else "grey"), width=60, alignment=ft.alignment.center),
                     ft.Container(
                         content=ft.Container(
-                            content=ft.Text(dato["estado"], size=9, color="white", weight=ft.FontWeight.BOLD),
+                            content=ft.Text(dato["estado"], size=9, color="white", weight="bold"),
                             bgcolor=dato["color"],
                             padding=ft.padding.only(left=6, right=6, top=2, bottom=2),
-                            border_radius=12,
-                            alignment=ft.alignment.center
+                            border_radius=10
                         ),
-                        col={"xs": 1.5}
+                        width=80, alignment=ft.alignment.center
                     ),
-                ], spacing=2, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ], spacing=5),
                 bgcolor=bg_color,
                 padding=10,
                 border=ft.border.only(bottom=ft.BorderSide(1, "#E0E0E0"))
             )
             filas_tabla.append(fila)
-        
+
+        # Tabla con scroll horizontal en móvil
         tabla_resultados = ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Text("DETALLE DE REGISTROS", size=14, weight=ft.FontWeight.BOLD, color="#1E3A5F"),
+                    ft.Text("DETALLE DE REGISTROS", size=14, weight="bold", color="#1E3A5F"),
                     ft.Container(
                         content=ft.Text(f"{len(datos_ejemplo)} registros", size=11, color="white"),
                         bgcolor="#1E3A5F",
                         padding=ft.padding.only(left=8, right=8, top=2, bottom=2),
-                        border_radius=12
+                        border_radius=10
                     ),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=12),
-                cabecera_tabla,
-                ft.Column(filas_tabla, spacing=0, scroll=ft.ScrollMode.AUTO, height=300),
+                ], alignment="spaceBetween"),
+                ft.Container(height=10),
+                # Scroll horizontal solo cuando sea necesario
+                ft.Row([
+                    ft.Container(
+                        content=ft.Column([
+                            cabecera_tabla,
+                            ft.Column(filas_tabla, spacing=0, scroll=ft.ScrollMode.AUTO, height=250),
+                        ]),
+                        # Ancho fijo en móvil para forzar scroll, automático en desktop
+                        width=650 if self.page.width < 600 else None,
+                    )
+                ], scroll=ft.ScrollMode.AUTO if self.page.width < 600 else None),
             ]),
-            padding=20,
+            padding=15,
             bgcolor="white",
-            border_radius=12,
+            border_radius=10,
             border=ft.border.all(1, "#E0E0E0"),
-            margin=ft.margin.only(left=20, right=20, top=10, bottom=20)
+            margin=ft.margin.only(left=15, right=15, top=10, bottom=15)
         )
         
         # ==========================================================

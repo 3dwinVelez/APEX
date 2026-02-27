@@ -259,22 +259,19 @@ class DBManager:
     # ⏱️ SECCIÓN: GESTIÓN DE HORARIOS Y RUTAS ASOCIADAS
     # ==========================================================
 
-    def registrar_asistencia_db(self, usuario, tipo, placa):
-        """Usa la hora del servidor para evitar desfases entre tus 2 equipos"""
+    def registrar_asistencia_db(self, usuario, tipo, placa, lat, lon):
+        sql = """
+            INSERT INTO asistencia (usuario, tipo, placa, latitud, longitud, fecha_hora)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+        """
         try:
             with self.conectar() as conn:
                 with conn.cursor() as cursor:
-                    # Usamos CURRENT_DATE y TO_CHAR(NOW()...) para precisión total
-                    cursor.execute(
-                        """INSERT INTO asistencia 
-                           (usuario, vehiculo_placa, tipo_marca, hora, fecha) 
-                           VALUES (%s, %s, %s, TO_CHAR(NOW(), 'HH12:MI:SS AM'), CURRENT_DATE)""",
-                        (usuario, placa, tipo)
-                    )
-                conn.commit()
-                return True
+                    cursor.execute(sql, (usuario, tipo, placa, lat, lon))
+                    conn.commit()
+                    return True
         except Exception as e:
-            print(f"❌ Error al registrar asistencia: {e}")
+            print(f"❌ Error DB Asistencia: {e}")
             return False
 
         """
