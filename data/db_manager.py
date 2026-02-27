@@ -176,15 +176,27 @@ class DBManager:
     
     def registrar_usuario_full_pro(self, d):
         """
-        Registra un usuario con todos los campos profesionales
-        Args:
-            d: Diccionario con nombre, user, pass, rol, doc, empresa, id_interno, costo, salario, extra
-        Returns:
-            bool: True si éxito, False si error
+        Registra un usuario con todos los campos profesionales.
+        Compatible con PostgreSQL (Supabase/Railway).
         """
-        sql = """INSERT OR REPLACE INTO usuarios 
-                 (nombre, username, password, rol, documento, empresa, id_interno, costo_servicio, salario_base, tasa_extra) 
-                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+        # En PostgreSQL usamos 'ON CONFLICT' en lugar de 'INSERT OR REPLACE'
+        # Suponiendo que 'username' es tu llave única (UNIQUE)
+        sql = """
+            INSERT INTO usuarios 
+            (nombre, username, password, rol, documento, empresa, id_interno, costo_servicio, salario_base, tasa_extra) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (username) 
+            DO UPDATE SET 
+                nombre = EXCLUDED.nombre,
+                password = EXCLUDED.password,
+                rol = EXCLUDED.rol,
+                documento = EXCLUDED.documento,
+                empresa = EXCLUDED.empresa,
+                id_interno = EXCLUDED.id_interno,
+                costo_servicio = EXCLUDED.costo_servicio,
+                salario_base = EXCLUDED.salario_base,
+                tasa_extra = EXCLUDED.tasa_extra
+        """
         try:
             with self.conectar() as conn:
                 cursor = conn.cursor()
@@ -203,7 +215,9 @@ class DBManager:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"❌ Error en registro: {e}")
+            print(f"❌ Error en registro DB: {e}")
+            # Si el error es por el ON CONFLICT, podrías usar un INSERT simple 
+            # mientras verificas cuál es la columna UNIQUE en tu tabla.
             return False
 
     def obtener_lista_personal(self):
