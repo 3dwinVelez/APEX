@@ -1,6 +1,5 @@
 import sys
 import os
-import base64
 import flet as ft
 from datetime import datetime
 import threading 
@@ -53,14 +52,6 @@ try:
 except ImportError:
     pass
 
-# --- FUNCIÓN PARA CONVERTIR IMAGEN A BASE64 ---
-def imagen_a_base64(ruta_imagen):
-    try:
-        with open(ruta_imagen, "rb") as imagen:
-            return base64.b64encode(imagen.read()).decode()
-    except Exception as e:
-        print(f"⚠️ Error al convertir imagen: {e}")
-        return None
 
 def main(page: ft.Page):
     # --- CONFIGURACIÓN ESTÉTICA ---
@@ -72,10 +63,16 @@ def main(page: ft.Page):
     
     LOGO_URL = "logo_scj.png"
     
+# --- INICIALIZACIÓN DE MOTORES ---
+    try:
+        db = DBManager()
+        print("✅ DBManager conectado")
+    except Exception as e:
+        print(f"❌ Fallo al conectar DBManager: {e}")
+        db = None 
 
-    # --- INICIALIZACIÓN DE MOTORES ---
-    db = DBManager()
-    state = AppState(db) # <--- Activamos el Caché
+    state = AppState(db)
+
 
     import threading
 
@@ -219,5 +216,17 @@ def main(page: ft.Page):
     mostrar_login()
 
 if __name__ == "__main__":
-    # Importante: Mantener el assets_dir para cargar recursos locales si es necesario
-    ft.app(target=main, assets_dir="assets", view=ft.AppView.WEB_BROWSER, port=8080)
+    import os
+    # Obtenemos el puerto de Railway o usamos 8080 por defecto
+    port = int(os.getenv("PORT", 8080))
+    
+    # Ruta absoluta para que Railway no pierda la carpeta assets
+    path_assets = os.path.join(os.path.dirname(__file__), "assets")
+    
+    ft.app(
+        target=main, 
+        assets_dir=path_assets, 
+        view=ft.AppView.WEB_BROWSER, 
+        host="0.0.0.0",  # <--- Obligatorio para la nube
+        port=port        # <--- Usa el puerto que da Railway
+    )
