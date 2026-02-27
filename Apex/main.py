@@ -67,7 +67,7 @@ def main(page: ft.Page):
     # --- CONFIGURACIÓN DE LOGO PARA WEB ---
     # Al definir assets_dir="assets" al final del archivo, 
     # solo necesitas poner el nombre del archivo con una barra inicial.
-    LOGO_URL = "/logo_scj.png" 
+    LOGO_URL = "logo_scj.png" 
 
  
     # --- INICIALIZACIÓN DE MOTORES ---
@@ -216,9 +216,13 @@ def main(page: ft.Page):
     mostrar_login()
 
 if __name__ == "__main__":
+    import os
     # Importante: Mantener el assets_dir para cargar recursos locales si es necesario
     # ft.app(target=main, assets_dir="assets", view=ft.AppView.WEB_BROWSER, port=8080)
     port = int(os.getenv("PORT", 8080))
+    
+    
+    path_assets = os.path.join(os.path.dirname(__file__), "assets")
     
     ft.app(
         target=main, 
