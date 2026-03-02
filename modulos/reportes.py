@@ -22,6 +22,9 @@ class ReportesModule:
     
     def zona_segura(self, contenido, col_size={"sm": 12, "md": 11, "lg": 10}):
         """Aplica márgenes consistentes al contenido"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         return ft.ResponsiveRow([
             ft.Column([
                 ft.Container(
@@ -33,6 +36,9 @@ class ReportesModule:
     
     def menu_reportes(self, e=None):
         """Menú principal de reportes"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         header = ft.Row([
@@ -103,6 +109,9 @@ class ReportesModule:
     
     def reporte_no_disponible(self, e=None):
         """Muestra mensaje de reporte no disponible"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.snack_bar = ft.SnackBar(
             content=ft.Text("📋 Reporte en desarrollo - Próximamente disponible"),
             bgcolor="#E65100"
@@ -112,6 +121,9 @@ class ReportesModule:
     
     def reporte_control_horario(self, e=None):
         """Reporte de control horario con diseño profesional y responsive"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         self.page.scroll = ft.ScrollMode.ADAPTIVE
         self.page.bgcolor = "#F8F9FA"
@@ -192,6 +204,9 @@ class ReportesModule:
         # KPI CARDS MEJORADAS (RESPONSIVE)
         # ==========================================================
         def crear_kpi_card(titulo, valor, icono, color, subtitulo, bgcolor="#FFFFFF"):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             return ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -258,6 +273,9 @@ class ReportesModule:
         
         # Selectores de fecha mejorados
         def crear_date_field(label, value, date_picker):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             return ft.Container(
                 content=ft.Row([
                     ft.TextField(
@@ -370,6 +388,9 @@ class ReportesModule:
         # GRÁFICO DE RESUMEN MEJORADO
         # ==========================================================
         def crear_indicador(titulo, valor, color, porcentaje):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             return ft.Container(
                 content=ft.Column([
                     ft.Text(titulo, size=11, color="grey600"),
@@ -534,6 +555,9 @@ class ReportesModule:
     
     def generar_reporte_control(self, fecha_ini, fecha_fin, vehiculo, empleado):
         """Genera el reporte con los filtros aplicados"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         
         # Mostrar indicador de carga
         self.resultados_container.content = ft.Column([
@@ -644,6 +668,9 @@ class ReportesModule:
     
     def obtener_rutas_rango(self, fecha_ini, fecha_fin, placa=None, empleado=None):
         """Obtiene rutas en un rango de fechas"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         query = """SELECT fecha, vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog 
                    FROM planeacion_rutas 
                    WHERE fecha BETWEEN ? AND ?"""
@@ -683,6 +710,9 @@ class ReportesModule:
     
     def obtener_marcas_empleado_rango(self, usuario, placa, fecha_ini, fecha_fin):
         """Obtiene marcas de un usuario agrupadas por fecha"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         with self.db.conectar() as conn:
             cursor = conn.cursor()
             cursor.execute("""

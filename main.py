@@ -286,11 +286,16 @@ def main(page: ft.Page):
     # ==========================================================
     def mostrar_dashboard(usuario_nombre=None):
         # 🔐 VERIFICAR SESIÓN
+           # 🔐 VERIFICAR SESIÓN
         if not page.sesion.verificar():
             print("🚫 Sin sesión válida")
             mostrar_login()
             return
         
+        # 🐞 DEBUG - Mostrar información de sesión
+        print(f"🔓 Sesión activa - Usuario: {page.sesion.usuario}")
+        print(f"📦 Datos de sesión: {page.sesion.datos}")
+    
         page.clean()
         page.vertical_alignment = ft.MainAxisAlignment.START
         

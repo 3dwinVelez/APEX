@@ -14,6 +14,9 @@ class VehiculosModule:
 
     def zona_segura(self, contenido, col_size={"sm": 12, "md": 11, "lg": 10}):
         """Aplica márgenes consistentes al contenido"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         return ft.ResponsiveRow([
             ft.Column([
                 ft.Container(
@@ -25,6 +28,9 @@ class VehiculosModule:
 
     def mostrar_maestro_vehiculos(self, e=None):
         """Muestra listado de vehículos registrados"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         try:
@@ -94,6 +100,9 @@ class VehiculosModule:
 
     def abrir_formulario_vehiculo(self, placa_edit=None, modelo_edit=None):
         """Formulario para registrar o editar vehículo"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         txt_placa = ft.TextField(
@@ -127,6 +136,9 @@ class VehiculosModule:
             )
 
         def guardar_vehiculo(e):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             if not txt_placa.value:
                 txt_placa.error_text = "La placa es obligatoria"
                 self.page.update()
@@ -151,6 +163,9 @@ class VehiculosModule:
                 self.page.update()
 
         def cancelar(e):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             self.mostrar_maestro_vehiculos()
 
         # Construir formulario

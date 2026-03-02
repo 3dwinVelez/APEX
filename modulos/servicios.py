@@ -18,6 +18,9 @@ class ServiciosModule:
 
     def zona_segura(self, contenido, col_size={"sm": 12, "md": 11, "lg": 10}):
         """Aplica márgenes consistentes al contenido"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         return ft.ResponsiveRow([
             ft.Column([
                 ft.Container(
@@ -29,6 +32,9 @@ class ServiciosModule:
 
     def menu_servicio_tecnico(self, e=None):
         """Menú principal del módulo"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         menu_items = ft.Column(spacing=15, horizontal_alignment="stretch")
@@ -62,6 +68,9 @@ class ServiciosModule:
 
     def mostrar_historial(self, e=None):
         """Muestra el historial de servicios del técnico"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         # Placeholder - Implementar cuando tengas la tabla de órdenes completa
@@ -79,6 +88,9 @@ class ServiciosModule:
 
     def mostrar_seleccion_equipo(self, e=None):
         """Muestra catálogo de equipos para seleccionar"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         try:
@@ -120,6 +132,9 @@ class ServiciosModule:
 
     def mostrar_inspeccion(self, ref_data):
         """Muestra checklist de inspección para el equipo seleccionado"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         id_equipo = ref_data[0]
@@ -160,6 +175,9 @@ class ServiciosModule:
         
         # Crear orden de servicio al iniciar inspección
         def iniciar_inspeccion(e):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             tecnico_id = self.sesion.get("id", 1)
             orden_id = self.db.crear_orden_servicio(tecnico_id, id_equipo)
             
@@ -211,6 +229,9 @@ class ServiciosModule:
 
     def abrir_formulario_novedad(self, componente, nombre_equipo, id_equipo):
         """Formulario para reportar novedad en un componente"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         opciones_novedad = [
@@ -240,6 +261,9 @@ class ServiciosModule:
         )
 
         def enviar_reporte(e):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             # Aquí guardarías la novedad en la orden activa
             self.page.snack_bar = ft.SnackBar(
                 ft.Text("✅ Novedad reportada"), 
@@ -275,6 +299,10 @@ class ServiciosModule:
 
     def iniciar_orden_equipo(self, id_equipo, nombre_equipo):
         """Inicia una orden de servicio (versión simplificada)"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
+
         tecnico_id = self.sesion.get("id", 1)
         orden_id = self.db.crear_orden_servicio(tecnico_id, id_equipo)
         

@@ -15,6 +15,9 @@ class ReferenciasModule:
 
     def zona_segura(self, contenido, col_size={"sm": 12, "md": 11, "lg": 10}):
         """Aplica márgenes consistentes al contenido"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         return ft.ResponsiveRow([
             ft.Column([
                 ft.Container(
@@ -26,6 +29,9 @@ class ReferenciasModule:
 
     def mostrar_maestro_referencias(self, e=None):
         """Muestra el catálogo completo de referencias"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         try:
@@ -92,6 +98,9 @@ class ReferenciasModule:
 
     def abrir_detalle_referencia(self, ref_data):
         """Muestra detalle de una referencia con checklist de piezas"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         id_ref = ref_data[0]
@@ -162,6 +171,9 @@ class ReferenciasModule:
     
     def abrir_novedad_pieza(self, pieza, nombre_mueble, id_ref):
         """Formulario rápido para reportar novedad en pieza"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.snack_bar = ft.SnackBar(
             ft.Text(f"⚠️ Novedad reportada en: {pieza}"), 
             bgcolor="#E65100"
@@ -171,6 +183,9 @@ class ReferenciasModule:
     
     def abrir_formulario_referencia(self, ref_data=None):
         """Formulario para crear o editar referencia"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         modo_edicion = ref_data is not None
@@ -208,6 +223,9 @@ class ReferenciasModule:
         )
 
         def guardar_evt(e):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             if not txt_nom.value:
                 self.page.snack_bar = ft.SnackBar(ft.Text("❌ El nombre es obligatorio"), bgcolor="#B71C1C")
                 self.page.snack_bar.open = True

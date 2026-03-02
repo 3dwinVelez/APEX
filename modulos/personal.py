@@ -14,6 +14,9 @@ class PersonalModule:
 
     def zona_segura(self, contenido, col_size={"sm": 12, "md": 11, "lg": 10}):
         """Aplica márgenes consistentes al contenido"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         return ft.ResponsiveRow([
             ft.Column([
                 ft.Container(
@@ -25,6 +28,9 @@ class PersonalModule:
 
     def generar_id_auto(self, rol):
         """Genera ID automático basado en rol y contador"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         try:
             # Aseguramos que db tenga el método necesario
             conteo = self.db.contar_usuarios_por_rol(rol) + 1
@@ -36,6 +42,9 @@ class PersonalModule:
 
     def mostrar_maestro_personal(self, e=None):
         """Muestra listado de personal registrado"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         # Cargando lista desde la DB
@@ -101,6 +110,9 @@ class PersonalModule:
 
     def abrir_formulario_usuario(self, nombre_edit=None):
         """Menú de selección de rol para nuevo usuario"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         
         tarjeta_seleccion = ft.Container(
@@ -131,6 +143,9 @@ class PersonalModule:
 
     def form_especifico(self, rol):
         """Formulario específico según el rol seleccionado"""
+        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
         self.page.clean()
         nuevo_id = self.generar_id_auto(rol)
         
@@ -188,6 +203,9 @@ class PersonalModule:
             controles.append(ft.Row([txt_salario, txt_extra], spacing=10))
 
         def guardar_clic(e):
+            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
+                    self.volver_callback(None)
+                    return
             if not txt_nombre.value:
                 self.page.snack_bar = ft.SnackBar(ft.Text("❌ El nombre es obligatorio"), bgcolor="#B71C1C")
                 self.page.snack_bar.open = True
