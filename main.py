@@ -219,7 +219,7 @@ def main(page: ft.Page):
         )
         
         def intentar_login(e):
-            username = txt_user.value
+            username = "administrador"
             password = txt_pass.value
             
             # 🔐 VALIDACIÓN (MEJORAR CON TU DB)
