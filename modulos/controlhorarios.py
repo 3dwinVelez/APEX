@@ -312,7 +312,7 @@ class HorariosModule:
         if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
                     self.volver_callback(None)
                     return
-        nombre_usuario = self.sesion.get("usuario","administrador")
+        nombre_usuario = self.sesion.get("administrador","administrador")
         lat, lon = self.obtener_gps()
         
         if self.db.registrar_asistencia_db(nombre_usuario, tipo, placa, lat, lon):
