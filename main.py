@@ -11,6 +11,19 @@ if directorio_actual not in sys.path:
 
 from data.db_manager import DBManager
 
+class SesionManager:
+    def __init__(self):
+        self.usuario = None
+        self.activa = False
+    def iniciar(self, usuario_data):
+        self.usuario = usuario_data
+        self.activa = True
+    def cerrar(self):
+        self.activa = False
+        self.usuario = None
+    def verificar(self):
+        return self.activa
+
 # ==========================================================
 # 📦 CLASE DE ESTADO (CACHÉ) - El "Cerebro" de APEX
 # ==========================================================
@@ -75,6 +88,28 @@ def main(page: ft.Page):
 
     threading.Thread(target=carga_inicial_background, daemon=True).start()
 
+
+
+    def intentar_login(e):
+        # Tu validación actual (simulada o real)
+        username = "Administrador"
+        password = 1234
+        
+        # Aquí va tu validación con DB
+        # Por ahora aceptamos cualquier valor no vacío
+        if username and password:
+            # Datos del usuario
+            datos_usuario = {
+                "usuario": username,
+                "nombre": username,
+                "rol": "admin",
+                "id": 1
+            }
+
+        page.sesion.iniciar(datos_usuario)
+
+
+
     sesion = {
         "usuario": "Administrador",
         "nombre": "Administrador",
@@ -106,6 +141,30 @@ def main(page: ft.Page):
                 )
             ], col=col_size)
         ], alignment=ft.MainAxisAlignment.CENTER)
+
+    # ==========================================================
+    # GESTOR DE SESIONES PERSISTENTES
+    # ==========================================================
+    class SesionManager:
+        """Mantiene la sesión activa mientras el usuario navegue"""
+        
+        def __init__(self):
+            self.usuario = None
+            self.activa = False
+            
+        def iniciar(self, usuario_data):
+            self.usuario = usuario_data
+            self.activa = True
+            print(f"✅ Sesión iniciada: {usuario_data.get('usuario')}")
+            
+        def cerrar(self):
+            self.activa = False
+            self.usuario = None
+            print("👋 Sesión cerrada")
+            
+        def verificar(self):
+            """Siempre activa mientras la app esté abierta"""
+            return self.activa
 
     # ==========================================================
     # 1. LOGIN OPTIMIZADO
@@ -178,10 +237,16 @@ def main(page: ft.Page):
         page.add(login_ui)
         page.update()
 
+    
     # ==========================================================
     # 2. DASHBOARD CON TARJETAS RESPONSIVE
     # ==========================================================
+
+
     def mostrar_dashboard(usuario_nombre=None):
+        if not hasattr(page, 'sesion') or not page.sesion.verificar():
+            mostrar_login()
+            return
         page.clean()
         page.vertical_alignment = ft.MainAxisAlignment.START
         

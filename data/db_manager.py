@@ -26,6 +26,18 @@ class DBManager:
         self.crear_tablas()
         self.actualizar_estructura_personal()
 
+    def verificar_rate_limit(self):
+        """Previene abuso de consultas"""
+        ahora = datetime.now()
+        if (ahora - self.inicio_ventana).seconds > 60:
+            self.contador_consultas = 0
+            self.inicio_ventana = ahora
+        
+        self.contador_consultas += 1
+        if self.contador_consultas > self.limite_consultas_por_minuto:
+            raise Exception("🚫 Límite de consultas excedido. Intenta en 1 minuto.")
+        return True
+
     def conectar(self):
         """Establece conexión limpia usando el diccionario de configuración"""
         try:
