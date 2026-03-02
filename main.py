@@ -11,21 +11,35 @@ if directorio_actual not in sys.path:
 
 from data.db_manager import DBManager
 
+# ==========================================================
+# 👑 GESTOR DE SESIONES (DEFINIDO UNA SOLA VEZ)
+# ==========================================================
 class SesionManager:
     def __init__(self):
         self.usuario = None
         self.activa = False
+        self.datos = {}
+        
     def iniciar(self, usuario_data):
-        self.usuario = usuario_data
+        self.datos = usuario_data
+        self.usuario = usuario_data.get("usuario")
         self.activa = True
+        print(f"✅ Sesión iniciada: {self.usuario}")
+        
     def cerrar(self):
         self.activa = False
         self.usuario = None
+        self.datos = {}
+        print("👋 Sesión cerrada")
+        
     def verificar(self):
         return self.activa
+    
+    def get_usuario(self):
+        return self.usuario
 
 # ==========================================================
-# 📦 CLASE DE ESTADO (CACHÉ) - El "Cerebro" de APEX
+# 📦 CLASE DE ESTADO (CACHÉ)
 # ==========================================================
 class AppState:
     def __init__(self, db_manager):
@@ -36,7 +50,6 @@ class AppState:
         self.ultima_actualizacion = None
 
     def sincronizar(self):
-        """🔄 Sincronización Optimizada: De 3 viajes a solo 1"""
         try:
             print("🌐 Sincronizando datos maestros desde Supabase...")
             paquete_datos = self.db.obtener_todo_al_inicio()
@@ -71,6 +84,9 @@ def main(page: ft.Page):
     
     LOGO_URL = "logo_scj.png"
     
+    # --- INICIALIZAR GESTOR DE SESIÓN (CRÍTICO) ---
+    page.sesion = SesionManager()
+    
     # --- INICIALIZACIÓN DE MOTORES ---
     try:
         db = DBManager()
@@ -82,152 +98,180 @@ def main(page: ft.Page):
     state = AppState(db)
 
     def carga_inicial_background():
-        """Ejecuta la sincronización sin bloquear la interfaz"""
         state.sincronizar()
         print("⚡ Datos de la nube listos en segundo plano.")
 
     threading.Thread(target=carga_inicial_background, daemon=True).start()
 
-
-
-    def intentar_login(e):
-        # Tu validación actual (simulada o real)
-        username = "Administrador"
-        password = 1234
+    # ==========================================================
+    # FUNCIONES RESPONSIVE MEJORADAS
+    # ==========================================================
+    def get_responsive_values():
+        """Obtiene valores responsive basados en el ancho"""
+        width = page.width
         
-        # Aquí va tu validación con DB
-        # Por ahora aceptamos cualquier valor no vacío
-        if username and password:
-            # Datos del usuario
-            datos_usuario = {
-                "usuario": username,
-                "nombre": username,
-                "rol": "admin",
-                "id": 1
+        if width < 400:  # Móvil pequeño
+            return {
+                "padding": 8,
+                "icon_size": 20,
+                "title_size": 14,
+                "card_height": 110,
+                "login_width": 280,
+                "titulo_login": 20,
+                "subtitulo": 10,
+                "boton_size": 35,
+                "grid_cols": 1
+            }
+        elif width < 600:  # Móvil grande
+            return {
+                "padding": 12,
+                "icon_size": 22,
+                "title_size": 15,
+                "card_height": 120,
+                "login_width": 320,
+                "titulo_login": 24,
+                "subtitulo": 11,
+                "boton_size": 40,
+                "grid_cols": 2
+            }
+        elif width < 900:  # Tablet
+            return {
+                "padding": 15,
+                "icon_size": 24,
+                "title_size": 16,
+                "card_height": 130,
+                "login_width": 360,
+                "titulo_login": 26,
+                "subtitulo": 12,
+                "boton_size": 45,
+                "grid_cols": 3
+            }
+        else:  # Desktop
+            return {
+                "padding": 20,
+                "icon_size": 26,
+                "title_size": 17,
+                "card_height": 140,
+                "login_width": 400,
+                "titulo_login": 28,
+                "subtitulo": 12,
+                "boton_size": 45,
+                "grid_cols": 4
             }
 
-        page.sesion.iniciar(datos_usuario)
-
-
-
-    sesion = {
-        "usuario": "Administrador",
-        "nombre": "Administrador",
-        "rol": "admin"
-    }
-
-    # --- FUNCIÓN DE MARGEN MEJORADA ---
     def zona_segura(contenido, col_size=None):
-        """Aplica márgenes responsive según el tamaño de pantalla"""
+        """Márgenes responsive mejorados"""
+        vals = get_responsive_values()
+        
         if col_size is None:
-            # Responsive: 12 en móvil, 10 en tablet, 8 en desktop
             if page.width < 600:
                 col_size = {"xs": 12}
             elif page.width < 900:
-                col_size = {"sm": 10}
+                col_size = {"sm": 11}
             else:
-                col_size = {"md": 8, "lg": 8}
+                col_size = {"md": 10, "lg": 9}
         
         return ft.ResponsiveRow([
             ft.Column([
                 ft.Container(
                     content=contenido, 
                     padding=ft.padding.only(
-                        left=15 if page.width < 600 else 20,
-                        right=15 if page.width < 600 else 20,
-                        top=15,
-                        bottom=30
+                        left=vals["padding"],
+                        right=vals["padding"],
+                        top=10,
+                        bottom=20
                     )
                 )
             ], col=col_size)
         ], alignment=ft.MainAxisAlignment.CENTER)
 
     # ==========================================================
-    # GESTOR DE SESIONES PERSISTENTES
-    # ==========================================================
-    class SesionManager:
-        """Mantiene la sesión activa mientras el usuario navegue"""
-        
-        def __init__(self):
-            self.usuario = None
-            self.activa = False
-            
-        def iniciar(self, usuario_data):
-            self.usuario = usuario_data
-            self.activa = True
-            print(f"✅ Sesión iniciada: {usuario_data.get('usuario')}")
-            
-        def cerrar(self):
-            self.activa = False
-            self.usuario = None
-            print("👋 Sesión cerrada")
-            
-        def verificar(self):
-            """Siempre activa mientras la app esté abierta"""
-            return self.activa
-
-    # ==========================================================
-    # 1. LOGIN OPTIMIZADO
+    # 1. LOGIN CORREGIDO
     # ==========================================================
     def mostrar_login(e=None):
         page.clean()
         page.vertical_alignment = ft.MainAxisAlignment.CENTER
         page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
         
-        # Ancho responsive del login
-        ancho_login = 320 if page.width < 400 else 360 if page.width < 600 else 400
+        vals = get_responsive_values()
         
         txt_user = ft.TextField(
             label="Usuario", 
             border_radius=8, 
-            width=ancho_login, 
+            width=vals["login_width"], 
             bgcolor="white",
             border_color="#E0E0E0",
             focused_border_color="#263238",
-            prefix_icon=ft.icons.PERSON
+            prefix_icon=ft.icons.PERSON,
+            text_size=14
         )
         
         txt_pass = ft.TextField(
             label="Contraseña", 
             password=True, 
             border_radius=8, 
-            width=ancho_login, 
+            width=vals["login_width"], 
             bgcolor="white",
             border_color="#E0E0E0",
             focused_border_color="#263238",
-            prefix_icon=ft.icons.LOCK
+            prefix_icon=ft.icons.LOCK,
+            text_size=14
         )
         
-        # Tamaños de texto responsive
-        titulo_size = 24 if page.width < 400 else 28
-        subtitulo_size = 11 if page.width < 400 else 12
+        def intentar_login(e):
+            username = txt_user.value
+            password = txt_pass.value
+            
+            # 🔐 VALIDACIÓN (MEJORAR CON TU DB)
+            if username and password:
+                # Datos del usuario
+                datos_usuario = {
+                    "usuario": username,
+                    "nombre": username,
+                    "rol": "admin",
+                    "id": 1
+                }
+                
+                # INICIAR SESIÓN
+                page.sesion.iniciar(datos_usuario)
+                
+                # Ir al dashboard
+                mostrar_dashboard(username)
+            else:
+                page.snack_bar = ft.SnackBar(
+                    content=ft.Text("❌ Usuario y contraseña requeridos"),
+                    bgcolor="#B71C1C",
+                    duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
         
         login_ui = ft.Stack([
             ft.Container(
-                content=ft.Image(src=LOGO_URL, opacity=0.03, width=ancho_login*2) if LOGO_URL else ft.Container(),
+                content=ft.Image(src=LOGO_URL, opacity=0.03, width=vals["login_width"]*2) if LOGO_URL else ft.Container(),
                 alignment=ft.alignment.center
             ),
             ft.Container(
                 content=ft.Column([
-                    ft.Image(src=LOGO_URL, width=ancho_login//2.5) if LOGO_URL else ft.Text("📊 APEX", size=32),
-                    ft.Text("SISTEMA APEX", size=titulo_size, weight="bold"),
-                    ft.Text("SCJ Soluciones Logísticas", size=subtitulo_size, color="grey"),
+                    ft.Image(src=LOGO_URL, width=vals["login_width"]//2.5) if LOGO_URL else ft.Text("📊 APEX", size=32),
+                    ft.Text("SISTEMA APEX", size=vals["titulo_login"], weight="bold"),
+                    ft.Text("SCJ Soluciones Logísticas", size=vals["subtitulo"], color="grey"),
                     ft.Container(height=15),
                     txt_user, 
                     txt_pass,
                     ft.Container(height=10),
                     ft.ElevatedButton(
                         "INGRESAR", 
-                        height=45, 
-                        width=ancho_login, 
+                        height=vals["boton_size"]+5, 
+                        width=vals["login_width"], 
                         bgcolor="#263238", 
                         color="white",
-                        on_click=lambda _: mostrar_dashboard(sesion["usuario"]),
+                        on_click=intentar_login,
                         style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
                     ),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=12),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
                 bgcolor="white",
-                padding=30,
+                padding=vals["padding"]*2,
                 border_radius=16,
                 border=ft.border.all(1, "#E0E0E0"),
                 shadow=ft.BoxShadow(blur_radius=20, color="#20000000")
@@ -237,24 +281,23 @@ def main(page: ft.Page):
         page.add(login_ui)
         page.update()
 
-    
     # ==========================================================
-    # 2. DASHBOARD CON TARJETAS RESPONSIVE
+    # 2. DASHBOARD CORREGIDO
     # ==========================================================
-
-
     def mostrar_dashboard(usuario_nombre=None):
-        if not hasattr(page, 'sesion') or not page.sesion.verificar():
+        # 🔐 VERIFICAR SESIÓN
+        if not page.sesion.verificar():
+            print("🚫 Sin sesión válida")
             mostrar_login()
             return
+        
         page.clean()
         page.vertical_alignment = ft.MainAxisAlignment.START
         
-        # Tamaños responsive
-        logo_altura = 35 if page.width < 600 else 45
-        titulo_header = 18 if page.width < 600 else 20
+        vals = get_responsive_values()
         
-        logo_header = ft.Image(src=LOGO_URL, height=logo_altura) if LOGO_URL else ft.Text("📊", size=30)
+        # Header
+        logo_header = ft.Image(src=LOGO_URL, height=35) if LOGO_URL else ft.Text("📊", size=25)
         
         header_content = ft.Row([
             ft.Row([
@@ -263,109 +306,93 @@ def main(page: ft.Page):
                     padding=5, bgcolor="white", border_radius=8
                 ),
                 ft.Column([
-                    ft.Text("SISTEMA APEX", size=titulo_header, weight="bold", color="white"), 
-                    ft.Text("SCJ SOLUCIONES", color="#A5D6A7", size=9, weight="bold")
+                    ft.Text("APEX", size=vals["title_size"]+2, weight="bold", color="white"), 
+                    ft.Text("SCJ", color="#A5D6A7", size=8, weight="bold")
                 ], spacing=0)
-            ], spacing=10),
-            ft.ElevatedButton("SALIR", on_click=mostrar_login, 
+            ], spacing=8),
+            ft.ElevatedButton(
+                "SALIR", 
+                on_click=lambda _: [page.sesion.cerrar(), mostrar_login()],
                 style=ft.ButtonStyle(color="white", bgcolor="#455A64"),
-                height=35
+                height=30,
+                width=70
             )
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
         header = ft.Container(
             content=zona_segura(header_content),
             bgcolor="#263238", 
-            padding=ft.padding.only(top=8, bottom=8)
+            padding=ft.padding.only(top=5, bottom=5)
         )
 
         def crear_tarjeta_erp(titulo, subtitulo, icon, color="#2E7D32", disponible=True, callback=None):
-            """Crea tarjetas responsive minimalistas"""
-            
-            # Tamaños responsive
-            if page.width < 400:
-                padding = 12
-                icon_size = 22
-                title_size = 13
-                altura = 120
-            elif page.width < 600:
-                padding = 15
-                icon_size = 24
-                title_size = 14
-                altura = 130
-            else:
-                padding = 20
-                icon_size = 26
-                title_size = 15
-                altura = 140
+            """Tarjetas responsive ultra compactas"""
             
             return ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(icon, color=color, size=icon_size),
-                        ft.Text(titulo, weight="bold", size=title_size, color="#263238"),
-                    ], alignment=ft.MainAxisAlignment.START),
+                        ft.Icon(icon, color=color, size=vals["icon_size"]),
+                        ft.Text(titulo[:12], weight="bold", size=vals["title_size"]-1, color="#263238"),
+                    ]),
                     ft.Text(
-                        subtitulo, 
-                        size=10, 
+                        subtitulo[:20], 
+                        size=9, 
                         color="grey600", 
-                        max_lines=2,
-                        overflow=ft.TextOverflow.ELLIPSIS
+                        max_lines=1,
                     ) if disponible else ft.Text(
-                        "Próximamente", 
+                        "Próximo", 
                         italic=True, 
-                        size=10, 
+                        size=9, 
                         color="orange"
                     ),
-                ], spacing=4),
-                padding=padding,
+                ], spacing=2, horizontal_alignment="center"),
+                padding=vals["padding"],
                 bgcolor="white",
-                border_radius=10,
+                border_radius=8,
                 border=ft.border.all(1, "#E0E0E0"),
                 on_click=callback if disponible else None,
                 ink=True,
                 col={"xs": 12, "sm": 6, "md": 4, "lg": 3},
-                height=altura,
+                height=vals["card_height"],
             )
 
-        # Grid de módulos con espaciado responsive
-        spacing = 10 if page.width < 400 else 15
-        run_spacing = 10 if page.width < 400 else 15
+        # Grid de módulos
+        spacing = 8 if page.width < 400 else 10
         
         grid_items = ft.Column([
-            ft.Container(ft.Text("OPERACIONES", size=11, weight="bold", color="grey600"), padding=10),
+            ft.Container(ft.Text("OPERACIONES", size=10, weight="bold", color="grey600"), padding=8),
             ft.ResponsiveRow([
-                crear_tarjeta_erp("Servicio Técnico", "Reparaciones", ft.icons.BUILD_CIRCLE_OUTLINED, "#1565C0", True,
-                                  lambda _: ServiciosModule(page, db, sesion, mostrar_dashboard).menu_servicio_tecnico()),
-                crear_tarjeta_erp("Control Horarios", "Asistencia", ft.icons.TIMER_OUTLINED, "#2E7D32", True,
-                                  lambda _: HorariosModule(page, db, sesion, mostrar_dashboard).mostrar_control_horarios()),
-                crear_tarjeta_erp("Gestión Flota", "Vehículos", ft.icons.LOCAL_SHIPPING_OUTLINED, "#FF8F00", True,
-                                  lambda _: VehiculosModule(page, db, sesion, mostrar_dashboard).mostrar_maestro_vehiculos()),
-            ], spacing=spacing, run_spacing=run_spacing),
+                crear_tarjeta_erp("Servicio Técnico", "Reparaciones", ft.icons.BUILD, "#1565C0", True,
+                                  lambda _: ServiciosModule(page, db, page.sesion.datos, mostrar_dashboard).menu_servicio_tecnico()),
+                crear_tarjeta_erp("Control Horarios", "Asistencia", ft.icons.TIMER, "#2E7D32", True,
+                                  lambda _: HorariosModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_control_horarios()),
+                crear_tarjeta_erp("Gestión Flota", "Vehículos", ft.icons.LOCAL_SHIPPING, "#FF8F00", True,
+                                  lambda _: VehiculosModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_maestro_vehiculos()),
+            ], spacing=spacing, run_spacing=spacing),
             
-            ft.Container(ft.Text("ADMINISTRACIÓN", size=11, weight="bold", color="grey600"), padding=10),
+            ft.Container(ft.Text("ADMINISTRACIÓN", size=10, weight="bold", color="grey600"), padding=8),
             ft.ResponsiveRow([
-                crear_tarjeta_erp("Personal", "Empleados", ft.icons.PEOPLE_ALT_OUTLINED, "#455A64", True,
-                                  lambda _: PersonalModule(page, db, sesion, mostrar_dashboard).mostrar_maestro_personal()),
-                crear_tarjeta_erp("Referencias", "Catálogos", ft.icons.FOLDER_SHARED_OUTLINED, "#455A64", True,
-                                  lambda _: ReferenciasModule(page, db, sesion, mostrar_dashboard).mostrar_maestro_referencias()),
-                crear_tarjeta_erp("Nómina", "Próximo", ft.icons.ACCOUNT_BALANCE_WALLET_OUTLINED, "#455A64", False),
-            ], spacing=spacing, run_spacing=run_spacing),
+                crear_tarjeta_erp("Personal", "Empleados", ft.icons.PEOPLE, "#455A64", True,
+                                  lambda _: PersonalModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_maestro_personal()),
+                crear_tarjeta_erp("Referencias", "Catálogos", ft.icons.FOLDER, "#455A64", True,
+                                  lambda _: ReferenciasModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_maestro_referencias()),
+                crear_tarjeta_erp("Nómina", "Próximo", ft.icons.ACCOUNT_BALANCE, "#455A64", False),
+            ], spacing=spacing, run_spacing=spacing),
             
-            ft.Container(ft.Text("ANÁLISIS", size=11, weight="bold", color="grey600"), padding=10),
+            ft.Container(ft.Text("ANÁLISIS", size=10, weight="bold", color="grey600"), padding=8),
             ft.ResponsiveRow([
-                crear_tarjeta_erp("REPORTES", "Estadísticas", ft.icons.INSERT_CHART_OUTLINED, "#1565C0", True,
-                                  lambda _: ReportesModule(page, db, sesion, mostrar_dashboard).menu_reportes()),
-                crear_tarjeta_erp("KPIs", "Próximo", ft.icons.DASHBOARD_OUTLINED, "#2E7D32", False),
-                crear_tarjeta_erp("Exportar", "Próximo", ft.icons.DOWNLOAD_OUTLINED, "#FF8F00", False),
-            ], spacing=spacing, run_spacing=run_spacing),
-        ], spacing=5)
+                crear_tarjeta_erp("REPORTES", "Estadísticas", ft.icons.INSERT_CHART, "#1565C0", True,
+                                  lambda _: ReportesModule(page, db, page.sesion.datos, mostrar_dashboard).menu_reportes()),
+                crear_tarjeta_erp("KPIs", "Próximo", ft.icons.DASHBOARD, "#2E7D32", False),
+                crear_tarjeta_erp("Exportar", "Próximo", ft.icons.DOWNLOAD, "#FF8F00", False),
+            ], spacing=spacing, run_spacing=spacing),
+        ], spacing=2)
 
         contenido = ft.Column([header, zona_segura(grid_items)], scroll=ft.ScrollMode.AUTO, expand=True)
-        
         page.add(contenido)
         page.update()
 
+    # Iniciar con login
     mostrar_login()
 
 if __name__ == "__main__":
