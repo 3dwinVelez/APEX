@@ -4,64 +4,68 @@ import json
 
 class HorariosModule:
     """
-    ⏱️ MÓDULO DE CONTROL HORARIO - VERSIÓN RESPONSIVE
+    ⏱️ MÓDULO DE CONTROL HORARIO - VERSIÓN CORREGIDA
     """
     
     def __init__(self, page, db, sesion, volver_callback):
         self.page = page
         self.db = db
-        self.sesion = sesion
+        self.sesion = sesion  # Este es el diccionario con datos del usuario
         self.volver_callback = volver_callback
 
-    def get_responsive_values(self):
+    def verificar_sesion(self):
+        """Verifica que la sesión esté activa y retorna bool"""
         if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-            self.volver_callback(None)
-            return
+            print("🚫 Sesión no válida en HorariosModule")
+            return False
+        return True
+
+    def get_responsive_values(self):
         """Retorna valores responsive basados en el ancho de pantalla"""
         width = self.page.width
         
         if width < 400:
             return {
-                "boton_size": 60,
-                "padding": 10,
-                "icon_size": 20,
-                "title_size": 16,
-                "spacing": 8,
+                "boton_size": 55,
+                "padding": 8,
+                "icon_size": 18,
+                "title_size": 14,
+                "spacing": 5,
                 "columnas": 1
             }
         elif width < 600:
             return {
-                "boton_size": 70,
-                "padding": 15,
-                "icon_size": 22,
-                "title_size": 18,
-                "spacing": 10,
+                "boton_size": 65,
+                "padding": 12,
+                "icon_size": 20,
+                "title_size": 16,
+                "spacing": 8,
                 "columnas": 2
             }
         elif width < 900:
             return {
-                "boton_size": 80,
-                "padding": 20,
-                "icon_size": 24,
-                "title_size": 20,
-                "spacing": 12,
+                "boton_size": 75,
+                "padding": 15,
+                "icon_size": 22,
+                "title_size": 18,
+                "spacing": 10,
                 "columnas": 3
             }
         else:
             return {
-                "boton_size": 85,
-                "padding": 25,
-                "icon_size": 26,
-                "title_size": 22,
-                "spacing": 15,
+                "boton_size": 80,
+                "padding": 18,
+                "icon_size": 24,
+                "title_size": 20,
+                "spacing": 12,
                 "columnas": 4
             }
 
     def zona_segura(self, contenido, col_size=None):
         """Aplica márgenes responsive"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-            self.volver_callback(None)
-            return
+        if not self.verificar_sesion():
+            return ft.Container()
+            
         vals = self.get_responsive_values()
         
         if col_size is None:
@@ -88,14 +92,15 @@ class HorariosModule:
 
     def mostrar_control_horarios(self, e=None):
         """Menú principal del módulo"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-            self.volver_callback(None)
+        if not self.verificar_sesion():
+            self.volver_callback(self.sesion.get("usuario", "Administrador"))
             return
+            
         self.page.clean()
         vals = self.get_responsive_values()
         
         header = ft.Row([
-            ft.TextButton("← VOLVER", on_click=lambda _: self.volver_callback(self.sesion["usuario"])),
+            ft.TextButton("← VOLVER", on_click=lambda _: self.volver_callback(self.sesion.get("usuario", "Administrador"))),
             ft.Text("TIEMPOS", size=vals["title_size"], weight="bold"),
         ], alignment="spaceBetween")
 
@@ -124,9 +129,9 @@ class HorariosModule:
 
     def crear_tarjeta_menu(self, titulo, emoji, subtitulo, accion):
         """Crea tarjetas de menú minimalistas"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-            self.volver_callback(None)
-            return
+        if not self.verificar_sesion():
+            return ft.Container()
+            
         vals = self.get_responsive_values()
         
         return ft.Container(
@@ -150,9 +155,6 @@ class HorariosModule:
     # ==========================================================
     def obtener_gps(self):
         """Captura ubicación con manejo de errores"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-            self.volver_callback(None)
-            return
         try:
             position = self.page.get_geolocator_position(timeout=10)
             if position:
@@ -164,15 +166,20 @@ class HorariosModule:
 
     def vista_marcacion_asistencia(self, e=None):
         """Vista de marcación responsive"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-            self.volver_callback(None)
+        if not self.verificar_sesion():
+            self.volver_callback(self.sesion.get("usuario", "Administrador"))
             return
+            
         self.page.clean()
         vals = self.get_responsive_values()
         ahora = datetime.now().strftime("%I:%M %p")
         
+        # Obtener usuario de self.sesion (diccionario local)
         nombre_usuario = self.sesion.get("usuario", "Administrador")
+        print(f"🎯 Usuario en asistencia: {nombre_usuario}")
+        
         mis_rutas = self.db.obtener_planes_empleado(nombre_usuario)
+        print(f"📋 Rutas encontradas: {len(mis_rutas)}")
         
         # Dropdown responsive
         if mis_rutas:
@@ -195,9 +202,9 @@ class HorariosModule:
         info_text = ft.Text("", size=11, color="grey", italic=True)
 
         def cargar_controles(e):
-            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                self.volver_callback(None)
+            if not self.verificar_sesion():
                 return
+                
             if not dd_vehiculo.value or dd_vehiculo.value == "SIN_VEHICULOS":
                 info_text.value = "❌ No tienes vehículos asignados"
                 self.page.update()
@@ -208,9 +215,6 @@ class HorariosModule:
             ultima = self.db.obtener_ultima_marca_por_vehiculo(nombre_usuario, placa)
 
             def determinar_estado(tipo):
-                if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
                 if not ultima:
                     return tipo == "entrada"
                 if ultima == "entrada":
@@ -222,9 +226,6 @@ class HorariosModule:
                 return False
 
             def crear_boton(texto, emoji, color, tipo_m):
-                if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
                 habilitado = determinar_estado(tipo_m)
                 hora_m = marcas.get(tipo_m, "--:--")
                 
@@ -309,10 +310,11 @@ class HorariosModule:
 
     def registrar_marca(self, tipo, placa):
         """Registra marca con GPS"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
-        nombre_usuario = self.sesion.get("administrador","administrador")
+        if not self.verificar_sesion():
+            self.volver_callback(self.sesion.get("usuario", "Administrador"))
+            return
+            
+        nombre_usuario = self.sesion.get("usuario", "Administrador")
         lat, lon = self.obtener_gps()
         
         if self.db.registrar_asistencia_db(nombre_usuario, tipo, placa, lat, lon):
@@ -337,9 +339,10 @@ class HorariosModule:
     # ==========================================================
     def vista_planeacion_admin(self, e=None):
         """Vista de planeación responsive"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
+        if not self.verificar_sesion():
+            self.volver_callback(self.sesion.get("usuario", "Administrador"))
+            return
+            
         self.page.clean()
         vals = self.get_responsive_values()
         
@@ -354,7 +357,6 @@ class HorariosModule:
             dense=True
         )
         
-        # Horarios responsive
         tf_hora_inicio = ft.TextField(
             label="Inicio", 
             value="08:00", 
@@ -390,10 +392,6 @@ class HorariosModule:
         )
         
         def crear_fila_horarios():
-            """Fila de horarios responsive"""
-            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
             if self.page.width < 500:
                 return ft.Column([
                     ft.Row([tf_hora_inicio, dd_am_pm_ini], alignment=ft.MainAxisAlignment.CENTER),
@@ -407,12 +405,9 @@ class HorariosModule:
                     tf_hora_fin, dd_am_pm_fin,
                 ], alignment=ft.MainAxisAlignment.START, spacing=5)
         
-        lista_empleados = ft.Column(spacing=5)
+        lista_empleados = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=200)
         
         def agregar_empleado(e):
-            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
             dd_emp = ft.Dropdown(
                 options=[ft.dropdown.Option(p[0]) for p in personal] if personal else [ft.dropdown.Option("Sin personal")],
                 border_radius=8,
@@ -431,23 +426,13 @@ class HorariosModule:
             self.page.update()
         
         def eliminar_fila(fila):
-            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
             lista_empleados.controls.remove(fila)
             self.page.update()
         
         if personal:
             agregar_empleado(None)
-        else:
-            lista_empleados.controls.append(
-                ft.Text("⚠️ No hay empleados", color="orange", size=11, italic=True)
-            )
         
         def guardar_plan(e):
-            if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
             if not dd_vehiculo.value or dd_vehiculo.value == "Sin vehículos":
                 self.page.snack_bar = ft.SnackBar(content=ft.Text("❌ Selecciona vehículo"), bgcolor="#B71C1C")
                 self.page.snack_bar.open = True
@@ -484,34 +469,34 @@ class HorariosModule:
             ft.Row([
                 ft.TextButton("←", on_click=self.mostrar_control_horarios),
             ], alignment="spaceBetween"),
-            ft.Text("PLANEACIÓN", size=vals["title_size"], weight="bold"),
+            ft.Text("PLAN", size=vals["title_size"], weight="bold"),
             ft.Container(
                 content=ft.Column([
                     ft.Container(
                         content=ft.Column([
-                            ft.Text("1. Vehículo", size=12, weight="bold", color="#1565C0"),
+                            ft.Text("1. Vehículo", size=11, weight="bold", color="#1565C0"),
                             dd_vehiculo,
                         ]),
-                        padding=10
+                        padding=8
                     ),
                     ft.Divider(height=1),
                     ft.Container(
                         content=ft.Column([
-                            ft.Text("2. Horario", size=12, weight="bold", color="#1565C0"),
+                            ft.Text("2. Horario", size=11, weight="bold", color="#1565C0"),
                             crear_fila_horarios(),
                         ]),
-                        padding=10
+                        padding=8
                     ),
                     ft.Divider(height=1),
                     ft.Container(
                         content=ft.Column([
                             ft.Row([
-                                ft.Text("3. Equipo", size=12, weight="bold", color="#1565C0"),
-                                ft.ElevatedButton("+", on_click=agregar_empleado, bgcolor="#263238", color="white", width=40, height=30),
+                                ft.Text("3. Equipo", size=11, weight="bold", color="#1565C0"),
+                                ft.ElevatedButton("+", on_click=agregar_empleado, bgcolor="#263238", color="white", width=36, height=28),
                             ], alignment="spaceBetween"),
                             lista_empleados,
                         ]),
-                        padding=10
+                        padding=8
                     ),
                     ft.Container(height=10),
                     ft.ElevatedButton(
@@ -519,15 +504,15 @@ class HorariosModule:
                         on_click=guardar_plan,
                         bgcolor="black",
                         color="white",
-                        height=40,
+                        height=38,
                     )
                 ]),
-                padding=15,
+                padding=12,
                 bgcolor="white",
-                border_radius=10,
+                border_radius=8,
                 border=ft.border.all(1, "#E0E0E0")
             )
-        ], spacing=10)
+        ], spacing=8)
         
         self.page.add(self.zona_segura(cuerpo))
         self.page.update()
@@ -537,9 +522,10 @@ class HorariosModule:
     # ==========================================================
     def vista_ruta_diaria(self, e=None, f_fecha=None, f_placa="Todos", f_empleado="Todos"):
         """Vista de rutas responsive"""
-        if not hasattr(self.page, 'sesion') or not self.page.sesion.verificar():
-                    self.volver_callback(None)
-                    return
+        if not self.verificar_sesion():
+            self.volver_callback(self.sesion.get("usuario", "Administrador"))
+            return
+            
         self.page.clean()
         vals = self.get_responsive_values()
         
@@ -600,7 +586,7 @@ class HorariosModule:
                     height=35,
                 )
             ]),
-            padding=12,
+            padding=10,
             bgcolor="white",
             border_radius=8
         )
@@ -628,34 +614,39 @@ class HorariosModule:
                 emp_row = ft.Container(
                     content=ft.Row([
                         ft.Row([
-                            ft.Text(icono, size=14),
-                            ft.Text(emp, weight="bold", size=12),
+                            ft.Text(icono, size=13),
+                            ft.Text(emp.split()[0] if " " in emp else emp, weight="bold", size=11),
                         ]),
-                        ft.Container(
-                            content=ft.Text(marcas.get("entrada", "--")[:5], size=10),
-                            padding=2
-                        ),
+                        ft.Text(marcas.get("entrada", "--")[:5], size=10),
                     ], alignment="spaceBetween"),
-                    padding=6,
+                    padding=5,
                     bgcolor="#F5F5F5",
-                    border_radius=6
+                    border_radius=5
                 )
                 empleados_col.controls.append(emp_row)
             
             tarjeta = ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Text("🚚", size=16),
-                        ft.Text(ruta["placa"], weight="bold", size=14),
-                        ft.Text(f"{len(ruta['equipo'])}", size=10, color="white"),
+                        ft.Row([
+                            ft.Text("🚚", size=14),
+                            ft.Text(ruta["placa"], weight="bold", size=13),
+                        ]),
+                        ft.Container(
+                            content=ft.Text(f"{len(ruta['equipo'])}", size=9, color="white", weight="bold"),
+                            bgcolor="#263238",
+                            padding=ft.padding.only(left=4, right=4, top=1, bottom=1),
+                            border_radius=8
+                        ),
                     ], alignment="spaceBetween"),
                     ft.Divider(height=1),
                     empleados_col
                 ]),
-                padding=12,
+                padding=10,
                 bgcolor="white",
                 border_radius=8,
-                border=ft.border.all(1, "#E0E0E0")
+                border=ft.border.all(1, "#E0E0E0"),
+                col={"xs": 12, "sm": 6, "md": 4}
             )
             tarjetas.controls.append(tarjeta)
         
@@ -672,6 +663,7 @@ class HorariosModule:
                 )
             )
 
+        # Grid responsive de tarjetas
         cuerpo = ft.Column([
             ft.Row([
                 ft.TextButton("←", on_click=self.mostrar_control_horarios),
@@ -679,7 +671,7 @@ class HorariosModule:
             ], alignment="spaceBetween"),
             ft.Text("RUTAS", size=vals["title_size"], weight="bold"),
             barra_filtros,
-            tarjetas
+            ft.ResponsiveRow(tarjetas.controls, spacing=8, run_spacing=8)
         ], scroll=ft.ScrollMode.AUTO)
         
         self.page.add(self.zona_segura(cuerpo))
