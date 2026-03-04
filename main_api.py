@@ -1,413 +1,405 @@
-import sys
 import os
-import flet as ft
+import json
 from datetime import datetime
-import threading 
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional
+import psycopg2
+from dotenv import load_dotenv
 
-# --- Ajuste de rutas ---
-directorio_actual = os.path.dirname(os.path.abspath(__file__))
-if directorio_actual not in sys.path:
-    sys.path.insert(0, directorio_actual)
+load_dotenv()
 
-from data.db_manager import DBManager
+app = FastAPI(title="APEX ERP API", version="2.0")
 
-# ==========================================================
-# 👑 GESTOR DE SESIONES (DEFINIDO UNA SOLA VEZ)
-# ==========================================================
-class SesionManager:
-    def __init__(self):
-        self.usuario = None
-        self.activa = False
-        self.datos = {}
-        
-    def iniciar(self, usuario_data):
-        self.datos = usuario_data
-        self.usuario = usuario_data.get("usuario")
-        self.activa = True
-        print(f"✅ Sesión iniciada: {self.usuario}")
-        
-    def cerrar(self):
-        self.activa = False
-        self.usuario = None
-        self.datos = {}
-        print("👋 Sesión cerrada")
-        
-    def verificar(self):
-        return self.activa
-    
-    def get_usuario(self):
-        return self.usuario
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# ==========================================================
-# 📦 CLASE DE ESTADO (CACHÉ)
-# ==========================================================
-class AppState:
-    def __init__(self, db_manager):
-        self.db = db_manager
-        self.personal = []
-        self.vehiculos = []
-        self.rutas_hoy = []
-        self.ultima_actualizacion = None
+# ============================================================
+# CONEXION A BASE DE DATOS (igual que tu db_manager.py)
+# ============================================================
+def get_conn():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"),
+        port="6543",
+        connect_timeout=10
+    )
 
-    def sincronizar(self):
-        try:
-            print("🌐 Sincronizando datos maestros desde Supabase...")
-            paquete_datos = self.db.obtener_todo_al_inicio()
-            self.personal = paquete_datos["personal"]
-            self.vehiculos = paquete_datos["vehiculos"]
-            self.rutas_hoy = paquete_datos["rutas"]
-            self.ultima_actualizacion = datetime.now()
-            print(f"✅ Sincronización completada: {self.ultima_actualizacion}")
-            return True
-        except Exception as e:
-            print(f"❌ Error al sincronizar: {e}")
-            return False
+# ============================================================
+# MODELOS PYDANTIC (validacion de datos)
+# ============================================================
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-# Importes con manejo de excepciones
-try:
-    from modulos.personal import PersonalModule
-    from modulos.referencias import ReferenciasModule
-    from modulos.controlhorarios import HorariosModule
-    from modulos.servicios import ServiciosModule
-    from modulos.vehiculos import VehiculosModule
-    from modulos.reportes import ReportesModule
-except ImportError as e:
-    print(f"⚠️ Módulo no cargado: {e}")
+class PersonalCreate(BaseModel):
+    nombre: str
+    doc: Optional[str] = ""
+    user: str
+    pas: Optional[str] = "1234"
+    rol: str
+    id_interno: str
+    empresa: Optional[str] = "APEX"
+    costo: Optional[float] = 0
+    salario: Optional[float] = 0
+    extra: Optional[float] = 0
 
-def main(page: ft.Page):
-    # --- CONFIGURACIÓN ESTÉTICA ---
-    page.title = "APEX ERP | SCJ Soluciones Logísticas"
-    page.theme_mode = ft.ThemeMode.LIGHT
-    page.bgcolor = "#F0F2F5"
-    page.padding = 0
-    page.spacing = 0
-    
-    LOGO_URL = "logo_scj.png"
-    
-    # --- INICIALIZAR GESTOR DE SESIÓN (CRÍTICO) ---
-    page.sesion = SesionManager()
-    
-    # --- INICIALIZACIÓN DE MOTORES ---
+class VehiculoCreate(BaseModel):
+    placa: str
+    modelo: Optional[str] = ""
+
+class ReferenciaCreate(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = ""
+    costo: Optional[float] = 0
+    piezas_json: Optional[str] = "[]"
+
+class OrdenCreate(BaseModel):
+    tecnico_id: int
+    referencia_id: int
+    tiempo_total: Optional[float] = 0
+    novedades_json: Optional[str] = "[]"
+
+class PlaneacionCreate(BaseModel):
+    fecha: str
+    placa: str
+    empleados: list
+    h_inicio: Optional[str] = "08:00 AM"
+    h_fin: Optional[str] = "06:00 PM"
+
+class AsistenciaCreate(BaseModel):
+    usuario: str
+    vehiculo_placa: str
+    tipo_marca: str
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+@app.get("/")
+def root():
+    return {"status": "APEX API v2.0 corriendo", "timestamp": str(datetime.now())}
+
+@app.get("/health")
+def health():
     try:
-        db = DBManager()
-        print("✅ DBManager conectado")
+        conn = get_conn()
+        conn.close()
+        return {"status": "ok", "db": "conectada"}
     except Exception as e:
-        print(f"❌ Fallo al conectar DBManager: {e}")
-        db = None 
+        return {"status": "error", "db": str(e)}
 
-    state = AppState(db)
-
-    def carga_inicial_background():
-        state.sincronizar()
-        print("⚡ Datos de la nube listos en segundo plano.")
-
-    threading.Thread(target=carga_inicial_background, daemon=True).start()
-
-    # ==========================================================
-    # FUNCIONES RESPONSIVE MEJORADAS
-    # ==========================================================
-    def get_responsive_values():
-        """Obtiene valores responsive basados en el ancho"""
-        width = page.width
-        
-        if width < 400:  # Móvil pequeño
-            return {
-                "padding": 8,
-                "icon_size": 20,
-                "title_size": 14,
-                "card_height": 110,
-                "login_width": 280,
-                "titulo_login": 20,
-                "subtitulo": 10,
-                "boton_size": 35,
-                "grid_cols": 1
-            }
-        elif width < 600:  # Móvil grande
-            return {
-                "padding": 12,
-                "icon_size": 22,
-                "title_size": 15,
-                "card_height": 120,
-                "login_width": 320,
-                "titulo_login": 24,
-                "subtitulo": 11,
-                "boton_size": 40,
-                "grid_cols": 2
-            }
-        elif width < 900:  # Tablet
-            return {
-                "padding": 15,
-                "icon_size": 24,
-                "title_size": 16,
-                "card_height": 130,
-                "login_width": 360,
-                "titulo_login": 26,
-                "subtitulo": 12,
-                "boton_size": 45,
-                "grid_cols": 3
-            }
-        else:  # Desktop
-            return {
-                "padding": 20,
-                "icon_size": 26,
-                "title_size": 17,
-                "card_height": 140,
-                "login_width": 400,
-                "titulo_login": 28,
-                "subtitulo": 12,
-                "boton_size": 45,
-                "grid_cols": 4
-            }
-
-    def zona_segura(contenido, col_size=None):
-        """Márgenes responsive mejorados"""
-        vals = get_responsive_values()
-        
-        if col_size is None:
-            if page.width < 600:
-                col_size = {"xs": 12}
-            elif page.width < 900:
-                col_size = {"sm": 11}
-            else:
-                col_size = {"md": 10, "lg": 9}
-        
-        return ft.ResponsiveRow([
-            ft.Column([
-                ft.Container(
-                    content=contenido, 
-                    padding=ft.padding.only(
-                        left=vals["padding"],
-                        right=vals["padding"],
-                        top=10,
-                        bottom=20
-                    )
-                )
-            ], col=col_size)
-        ], alignment=ft.MainAxisAlignment.CENTER)
-
-    # ==========================================================
-    # 1. LOGIN CORREGIDO
-    # ==========================================================
-    def mostrar_login(e=None):
-        page.clean()
-        page.vertical_alignment = ft.MainAxisAlignment.CENTER
-        page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-        
-        vals = get_responsive_values()
-        
-        txt_user = ft.TextField(
-            label="Usuario", 
-            border_radius=8, 
-            width=vals["login_width"], 
-            bgcolor="white",
-            border_color="#E0E0E0",
-            focused_border_color="#263238",
-            prefix_icon=ft.icons.PERSON,
-            text_size=14
+# ============================================================
+# AUTH - LOGIN
+# ============================================================
+@app.post("/login")
+def login(req: LoginRequest):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, nombre, rol, username FROM usuarios WHERE username = %s AND password = %s",
+            (req.username, req.password)
         )
-        
-        txt_pass = ft.TextField(
-            label="Contraseña", 
-            password=True, 
-            border_radius=8, 
-            width=vals["login_width"], 
-            bgcolor="white",
-            border_color="#E0E0E0",
-            focused_border_color="#263238",
-            prefix_icon=ft.icons.LOCK,
-            text_size=14
-        )
-        
-        def intentar_login(e):
-            username = "administrador"
-            password = txt_pass.value
-            
-            # 🔐 VALIDACIÓN (MEJORAR CON TU DB)
-            if username and password:
-                # Datos del usuario
-                datos_usuario = {
-                    "usuario": username,
-                    "nombre": username,
-                    "rol": "admin",
-                    "id": 1
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return {
+                "usuario": {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "rol": row[2],
+                    "username": row[3]
                 }
-                
-                # INICIAR SESIÓN
-                page.sesion.iniciar(datos_usuario)
-                
-                # Ir al dashboard
-                mostrar_dashboard(username)
-            else:
-                page.snack_bar = ft.SnackBar(
-                    content=ft.Text("❌ Usuario y contraseña requeridos"),
-                    bgcolor="#B71C1C",
-                    duration=2000
-                )
-                page.snack_bar.open = True
-                page.update()
-        
-        login_ui = ft.Stack([
-            ft.Container(
-                content=ft.Image(src=LOGO_URL, opacity=0.03, width=vals["login_width"]*2) if LOGO_URL else ft.Container(),
-                alignment=ft.alignment.center
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Image(src=LOGO_URL, width=vals["login_width"]//2.5) if LOGO_URL else ft.Text("📊 APEX", size=32),
-                    ft.Text("SISTEMA APEX", size=vals["titulo_login"], weight="bold"),
-                    ft.Text("SCJ Soluciones Logísticas", size=vals["subtitulo"], color="grey"),
-                    ft.Container(height=15),
-                    txt_user, 
-                    txt_pass,
-                    ft.Container(height=10),
-                    ft.ElevatedButton(
-                        "INGRESAR", 
-                        height=vals["boton_size"]+5, 
-                        width=vals["login_width"], 
-                        bgcolor="#263238", 
-                        color="white",
-                        on_click=intentar_login,
-                        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
-                    ),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-                bgcolor="white",
-                padding=vals["padding"]*2,
-                border_radius=16,
-                border=ft.border.all(1, "#E0E0E0"),
-                shadow=ft.BoxShadow(blur_radius=20, color="#20000000")
-            )
-        ], alignment=ft.alignment.center)
+            }
+        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        page.add(login_ui)
-        page.update()
+# ============================================================
+# PERSONAL
+# ============================================================
+@app.get("/personal")
+def get_personal():
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT nombre, rol, salario_base, id_interno, empresa FROM usuarios ORDER BY nombre")
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {"nombre": r[0], "rol": r[1], "salario_base": r[2], "id_interno": r[3], "empresa": r[4]}
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # ==========================================================
-    # 2. DASHBOARD CORREGIDO
-    # ==========================================================
-    def mostrar_dashboard(usuario_nombre=None):
-        # 🔐 VERIFICAR SESIÓN
-           # 🔐 VERIFICAR SESIÓN
-        if not page.sesion.verificar():
-            print("🚫 Sin sesión válida")
-            mostrar_login()
-            return
-        
-        # 🐞 DEBUG - Mostrar información de sesión
-        print(f"🔓 Sesión activa - Usuario: {page.sesion.usuario}")
-        print(f"📦 Datos de sesión: {page.sesion.datos}")
-    
-        page.clean()
-        page.vertical_alignment = ft.MainAxisAlignment.START
-        
-        vals = get_responsive_values()
-        
-        # Header
-        logo_header = ft.Image(src=LOGO_URL, height=35) if LOGO_URL else ft.Text("📊", size=25)
-        
-        header_content = ft.Row([
-            ft.Row([
-                ft.Container(
-                    content=logo_header,
-                    padding=5, bgcolor="white", border_radius=8
-                ),
-                ft.Column([
-                    ft.Text("APEX", size=vals["title_size"]+2, weight="bold", color="white"), 
-                    ft.Text("SCJ", color="#A5D6A7", size=8, weight="bold")
-                ], spacing=0)
-            ], spacing=8),
-            ft.ElevatedButton(
-                "SALIR", 
-                on_click=lambda _: [page.sesion.cerrar(), mostrar_login()],
-                style=ft.ButtonStyle(color="white", bgcolor="#455A64"),
-                height=30,
-                width=70
-            )
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+@app.post("/personal")
+def crear_personal(p: PersonalCreate):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO usuarios
+            (nombre, username, password, rol, documento, empresa, id_interno, costo_servicio, salario_base, tasa_extra)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (p.nombre, p.user, p.pas, p.rol, p.doc, p.empresa, p.id_interno, p.costo, p.salario, p.extra))
+        conn.commit()
+        conn.close()
+        return {"ok": True, "id_interno": p.id_interno}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-        header = ft.Container(
-            content=zona_segura(header_content),
-            bgcolor="#263238", 
-            padding=ft.padding.only(top=5, bottom=5)
+# ============================================================
+# VEHICULOS
+# ============================================================
+@app.get("/vehiculos")
+def get_vehiculos():
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT id, placa, modelo, estado FROM vehiculos ORDER BY placa")
+        rows = cur.fetchall()
+        conn.close()
+        return [{"id": r[0], "placa": r[1], "modelo": r[2], "estado": r[3]} for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/vehiculos")
+def crear_vehiculo(v: VehiculoCreate):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO vehiculos (placa, modelo, estado) VALUES (%s, %s, \'disponible\')",
+            (v.placa.upper(), v.modelo)
         )
+        conn.commit()
+        conn.close()
+        return {"ok": True, "placa": v.placa.upper()}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-        def crear_tarjeta_erp(titulo, subtitulo, icon, color="#2E7D32", disponible=True, callback=None):
-            """Tarjetas responsive ultra compactas"""
-            
-            return ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Icon(icon, color=color, size=vals["icon_size"]),
-                        ft.Text(titulo[:12], weight="bold", size=vals["title_size"]-1, color="#263238"),
-                    ]),
-                    ft.Text(
-                        subtitulo[:20], 
-                        size=9, 
-                        color="grey600", 
-                        max_lines=1,
-                    ) if disponible else ft.Text(
-                        "Próximo", 
-                        italic=True, 
-                        size=9, 
-                        color="orange"
-                    ),
-                ], spacing=2, horizontal_alignment="center"),
-                padding=vals["padding"],
-                bgcolor="white",
-                border_radius=8,
-                border=ft.border.all(1, "#E0E0E0"),
-                on_click=callback if disponible else None,
-                ink=True,
-                col={"xs": 12, "sm": 6, "md": 4, "lg": 3},
-                height=vals["card_height"],
-            )
+@app.patch("/vehiculos/{placa}")
+def actualizar_estado_vehiculo(placa: str, estado: str):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("UPDATE vehiculos SET estado = %s WHERE placa = %s", (estado, placa.upper()))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-        # Grid de módulos
-        spacing = 8 if page.width < 400 else 10
-        
-        grid_items = ft.Column([
-            ft.Container(ft.Text("OPERACIONES", size=10, weight="bold", color="grey600"), padding=8),
-            ft.ResponsiveRow([
-                crear_tarjeta_erp("Servicio Técnico", "Reparaciones", ft.icons.BUILD, "#1565C0", True,
-                                  lambda _: ServiciosModule(page, db, page.sesion.datos, mostrar_dashboard).menu_servicio_tecnico()),
-                crear_tarjeta_erp("Control Horarios", "Asistencia", ft.icons.TIMER, "#2E7D32", True,
-                                  lambda _: HorariosModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_control_horarios()),
-                crear_tarjeta_erp("Gestión Flota", "Vehículos", ft.icons.LOCAL_SHIPPING, "#FF8F00", True,
-                                  lambda _: VehiculosModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_maestro_vehiculos()),
-            ], spacing=spacing, run_spacing=spacing),
-            
-            ft.Container(ft.Text("ADMINISTRACIÓN", size=10, weight="bold", color="grey600"), padding=8),
-            ft.ResponsiveRow([
-                crear_tarjeta_erp("Personal", "Empleados", ft.icons.PEOPLE, "#455A64", True,
-                                  lambda _: PersonalModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_maestro_personal()),
-                crear_tarjeta_erp("Referencias", "Catálogos", ft.icons.FOLDER, "#455A64", True,
-                                  lambda _: ReferenciasModule(page, db, page.sesion.datos, mostrar_dashboard).mostrar_maestro_referencias()),
-                crear_tarjeta_erp("Nómina", "Próximo", ft.icons.ACCOUNT_BALANCE, "#455A64", False),
-            ], spacing=spacing, run_spacing=spacing),
-            
-            ft.Container(ft.Text("ANÁLISIS", size=10, weight="bold", color="grey600"), padding=8),
-            ft.ResponsiveRow([
-                crear_tarjeta_erp("REPORTES", "Estadísticas", ft.icons.INSERT_CHART, "#1565C0", True,
-                                  lambda _: ReportesModule(page, db, page.sesion.datos, mostrar_dashboard).menu_reportes()),
-                crear_tarjeta_erp("KPIs", "Próximo", ft.icons.DASHBOARD, "#2E7D32", False),
-                crear_tarjeta_erp("Exportar", "Próximo", ft.icons.DOWNLOAD, "#FF8F00", False),
-            ], spacing=spacing, run_spacing=spacing),
-        ], spacing=2)
+# ============================================================
+# REFERENCIAS
+# ============================================================
+@app.get("/referencias")
+def get_referencias():
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT id, nombre_referencia, descripcion, costo_mano_obra, piezas_json FROM maestro_referencias ORDER BY nombre_referencia")
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {"id": r[0], "nombre_referencia": r[1], "descripcion": r[2], "costo_mano_obra": r[3], "piezas_json": r[4]}
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        contenido = ft.Column([header, zona_segura(grid_items)], scroll=ft.ScrollMode.AUTO, expand=True)
-        page.add(contenido)
-        page.update()
+@app.post("/referencias")
+def crear_referencia(r: ReferenciaCreate):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO maestro_referencias (nombre_referencia, descripcion, costo_mano_obra, piezas_json)
+            VALUES (%s, %s, %s, %s)
+        """, (r.nombre, r.descripcion, r.costo, r.piezas_json))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Iniciar con login
-    mostrar_login()
+# ============================================================
+# ORDENES DE SERVICIO
+# ============================================================
+@app.get("/ordenes")
+def get_ordenes():
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT o.id, u.nombre, m.nombre_referencia, o.fecha_creacion,
+                   o.estado, o.tiempo_total, o.novedades_json
+            FROM ordenes_servicio o
+            LEFT JOIN usuarios u ON o.tecnico_id = u.id
+            LEFT JOIN maestro_referencias m ON o.referencia_id = m.id
+            ORDER BY o.id DESC LIMIT 50
+        """)
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {"id": r[0], "tecnico": r[1], "equipo": r[2], "fecha": str(r[3]),
+             "estado": r[4], "tiempo": r[5], "novedades": r[6]}
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ordenes")
+def crear_orden(o: OrdenCreate):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cur.execute("""
+            INSERT INTO ordenes_servicio
+            (tecnico_id, referencia_id, fecha_creacion, estado, tiempo_total, novedades_json)
+            VALUES (%s, %s, %s, \'cerrado\', %s, %s)
+            RETURNING id
+        """, (o.tecnico_id, o.referencia_id, fecha, o.tiempo_total, o.novedades_json))
+        orden_id = cur.fetchone()[0]
+        conn.commit()
+        conn.close()
+        return {"ok": True, "orden_id": orden_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================
+# HORARIOS - PLANEACION
+# ============================================================
+@app.get("/rutas")
+def get_rutas(fecha: Optional[str] = None):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        if fecha:
+            cur.execute("""
+                SELECT vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog, fecha
+                FROM planeacion_rutas WHERE fecha = %s ORDER BY id DESC
+            """, (fecha,))
+        else:
+            fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+            cur.execute("""
+                SELECT vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog, fecha
+                FROM planeacion_rutas WHERE fecha = %s ORDER BY id DESC
+            """, (fecha_hoy,))
+        rows = cur.fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            try:
+                empleados = json.loads(r[1]) if r[1] else []
+                result.append({"placa": r[0], "equipo": empleados, "h_inicio": r[2], "h_fin": r[3], "fecha": r[4]})
+            except:
+                continue
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/rutas")
+def crear_ruta(p: PlaneacionCreate):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO planeacion_rutas (fecha, vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (p.fecha, p.placa, json.dumps(p.empleados), p.h_inicio, p.h_fin))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================
+# ASISTENCIA
+# ============================================================
+@app.get("/asistencia")
+def get_asistencia(fecha: Optional[str] = None):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        f = fecha or datetime.now().strftime("%Y-%m-%d")
+        cur.execute("""
+            SELECT usuario, vehiculo_placa, tipo_marca, hora, fecha
+            FROM asistencia WHERE fecha = %s ORDER BY id
+        """, (f,))
+        rows = cur.fetchall()
+        conn.close()
+        return [{"usuario": r[0], "placa": r[1], "tipo": r[2], "hora": r[3], "fecha": r[4]} for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/asistencia")
+def marcar_asistencia(a: AsistenciaCreate):
+    try:
+        hora = datetime.now().strftime("%H:%M")
+        fecha = datetime.now().strftime("%Y-%m-%d")
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO asistencia (usuario, vehiculo_placa, tipo_marca, hora, fecha)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (a.usuario, a.vehiculo_placa, a.tipo_marca, hora, fecha))
+        conn.commit()
+        conn.close()
+        return {"ok": True, "hora": hora}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================
+# REPORTES - STATS GENERALES
+# ============================================================
+@app.get("/stats")
+def get_stats():
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        mes_actual = datetime.now().strftime("%Y-%m")
+
+        cur.execute("SELECT COUNT(*) FROM ordenes_servicio WHERE fecha_creacion::date = %s::date", (fecha_hoy,))
+        servicios_hoy = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM usuarios WHERE rol != \'admin\'")
+        total_personal = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM vehiculos WHERE estado = \'en ruta\'")
+        vehiculos_ruta = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT COUNT(*) FROM ordenes_servicio
+            WHERE novedades_json != \'[]\'
+            AND fecha_creacion::date = %s::date
+        """, (fecha_hoy,))
+        novedades_hoy = cur.fetchone()[0]
+
+        conn.close()
+        return {
+            "servicios_hoy": servicios_hoy,
+            "personal_activo": total_personal,
+            "vehiculos_en_ruta": vehiculos_ruta,
+            "novedades_hoy": novedades_hoy,
+        }
+    except Exception as e:
+        return {"servicios_hoy": 0, "personal_activo": 0, "vehiculos_en_ruta": 0, "novedades_hoy": 0}
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
-    path_assets = os.path.join(os.path.dirname(__file__), "assets")
-    
-    ft.app(
-        target=main, 
-        assets_dir=path_assets, 
-        view=ft.AppView.WEB_BROWSER, 
-        host="0.0.0.0",
-        port=port
-    )
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main_api:app", host="0.0.0.0", port=port, reload=False)

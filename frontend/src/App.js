@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import logo from "./assets/logo_scj.png";
 
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 // ============================================================
 // SISTEMA DE COLORES APEX
 // ============================================================
