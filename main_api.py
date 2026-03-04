@@ -55,6 +55,38 @@ class PersonalCreate(BaseModel):
 class VehiculoCreate(BaseModel):
     placa: str
     modelo: Optional[str] = ""
+    tipo: Optional[str] = ""
+    marca: Optional[str] = ""
+    anio: Optional[int] = None
+    color: Optional[str] = ""
+    cilindraje: Optional[str] = ""
+    capacidad_carga: Optional[str] = ""
+    combustible: Optional[str] = ""
+    kilometraje: Optional[int] = 0
+    num_serie: Optional[str] = ""
+    num_motor: Optional[str] = ""
+    soat_vence: Optional[str] = ""
+    tecnomecanica_vence: Optional[str] = ""
+    seguro_vence: Optional[str] = ""
+    propietario: Optional[str] = ""
+    estado: Optional[str] = "activo"
+    observaciones: Optional[str] = ""
+    tipo: Optional[str] = ""
+    marca: Optional[str] = ""
+    anio: Optional[int] = None
+    color: Optional[str] = ""
+    cilindraje: Optional[str] = ""
+    capacidad_carga: Optional[str] = ""
+    combustible: Optional[str] = ""
+    kilometraje: Optional[int] = 0
+    num_serie: Optional[str] = ""
+    num_motor: Optional[str] = ""
+    soat_vence: Optional[str] = ""
+    tecnomecanica_vence: Optional[str] = ""
+    seguro_vence: Optional[str] = ""
+    propietario: Optional[str] = ""
+    estado: Optional[str] = "activo"
+    observaciones: Optional[str] = ""
 
 class ReferenciaCreate(BaseModel):
     nombre: str
@@ -183,10 +215,28 @@ def get_vehiculos():
     try:
         conn = get_conn()
         cur = conn.cursor()
-        cur.execute("SELECT id, placa, modelo, estado FROM vehiculos ORDER BY placa")
+        cur.execute("""
+            SELECT id, placa, modelo, estado,
+                   COALESCE(tipo,''), COALESCE(marca,''), anio,
+                   COALESCE(color,''), COALESCE(cilindraje,''),
+                   COALESCE(capacidad_carga,''), COALESCE(combustible,''),
+                   COALESCE(kilometraje,0), COALESCE(num_serie,''),
+                   COALESCE(num_motor,''), COALESCE(soat_vence,''),
+                   COALESCE(tecnomecanica_vence,''), COALESCE(seguro_vence,''),
+                   COALESCE(propietario,''), COALESCE(observaciones,'')
+            FROM vehiculos ORDER BY placa
+        """)
         rows = cur.fetchall()
         conn.close()
-        return [{"id": r[0], "placa": r[1], "modelo": r[2], "estado": r[3]} for r in rows]
+        return [{
+            "id": r[0], "placa": r[1], "modelo": r[2], "estado": r[3],
+            "tipo": r[4], "marca": r[5], "anio": r[6],
+            "color": r[7], "cilindraje": r[8], "capacidad_carga": r[9],
+            "combustible": r[10], "kilometraje": r[11], "num_serie": r[12],
+            "num_motor": r[13], "soat_vence": r[14],
+            "tecnomecanica_vence": r[15], "seguro_vence": r[16],
+            "propietario": r[17], "observaciones": r[18]
+        } for r in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -407,6 +457,47 @@ async def crear_tablas():
         cur = conn.cursor()
 
         # Tabla maestro de tipos de novedad
+        # Columnas adicionales vehiculos
+        for col in [
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS marca TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS anio INTEGER",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS color TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS cilindraje TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS capacidad_carga TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS combustible TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS kilometraje INTEGER DEFAULT 0",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_serie TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_motor TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS soat_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tecnomecanica_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS seguro_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS observaciones TEXT DEFAULT ''",
+        ]:
+            try: cur.execute(col); conn.commit()
+            except: pass
+
+        for col in [
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS marca TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS anio INTEGER",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS color TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS cilindraje TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS capacidad_carga TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS combustible TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS kilometraje INTEGER DEFAULT 0",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_serie TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_motor TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS soat_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tecnomecanica_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS seguro_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS observaciones TEXT DEFAULT ''",
+        ]:
+            try: cur.execute(col); conn.commit()
+            except: pass
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS maestro_novedades_tipo (
                 id SERIAL PRIMARY KEY,
