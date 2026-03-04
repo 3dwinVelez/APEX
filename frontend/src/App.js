@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import logo from "./assets/logo_scj.png";
+
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
@@ -6,16 +8,18 @@ const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 // SISTEMA DE COLORES APEX
 // ============================================================
 const C = {
-  dark: "#1A1F2E",
-  accent: "#3B82F6",
-  success: "#10B981",
+  dark: "#0D1B2A",
+  accent: "#00B4D8",
+  success: "#06D6A0",
   warning: "#F59E0B",
   danger: "#EF4444",
-  bg: "#F7F8FC",
+  bg: "#F0F4F8",
   card: "#FFFFFF",
-  border: "#E8ECF0",
-  text: "#1A1F2E",
-  muted: "#8892A4",
+  border: "#DDE6EF",
+  text: "#0D1B2A",
+  muted: "#6B7A8D",
+  brand: "#00B4D8",
+  brandDark: "#0077A8",
 };
 
 // ============================================================
@@ -140,7 +144,12 @@ const PageHeader = ({ title, subtitle, onBack, action }) => (
 
 const KPI = ({ label, value, icon, color = C.accent }) => (
   <Card style={{ flex: 1, minWidth: 130 }}>
-    <div style={{ fontSize: 22 }}>{icon}</div>
+    <div style={{
+      width: 36, height: 36, borderRadius: 10, background: color + "18",
+      display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 4
+    }}>
+      <div style={{ width: 14, height: 14, borderRadius: "50%", background: color }} />
+    </div>
     <div style={{ fontSize: 26, fontWeight: 800, color, margin: "6px 0 2px" }}>{value}</div>
     <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: 0.5 }}>{label}</div>
   </Card>
@@ -189,15 +198,25 @@ const Layout = ({ children, user, onLogout, activePage, onNavigate }) => {
   ];
 
   const iconMap = {
+    "OO": "[ ]", "WR": "[ ]", "TM": "[ ]",
+    "VH": "[ ]", "PS": "[ ]", "RF": "[ ]", "RP": "[ ]"
+  };
+
+  const labelMap = {
     "OO": "Dashboard", "WR": "Servicios", "TM": "Horarios",
     "VH": "Vehiculos", "PS": "Personal", "RF": "Referencias", "RP": "Reportes"
+  };
+
+  const dotColor = {
+    "OO": "#00B4D8", "WR": "#06D6A0", "TM": "#F59E0B",
+    "VH": "#F59E0B", "PS": "#8B5CF6", "RF": "#EC4899", "RP": "#00B4D8"
   };
 
   return (
     <div style={{ display: "flex", height: "100vh", background: C.bg, fontFamily: "'Segoe UI', sans-serif" }}>
       {/* SIDEBAR */}
       <div style={{
-        width: 220, background: C.dark, display: "flex", flexDirection: "column",
+        width: 220, background: "#0D1B2A", display: "flex", flexDirection: "column",
         padding: "24px 0", flexShrink: 0, overflowY: "auto"
       }}>
         <div style={{ padding: "0 20px 28px" }}>
@@ -211,16 +230,21 @@ const Layout = ({ children, user, onLogout, activePage, onNavigate }) => {
               key={item.id}
               onClick={() => onNavigate(item.id)}
               style={{
-                padding: "11px 20px", display: "flex", alignItems: "center", gap: 10,
-                background: activePage === item.id ? "rgba(255,255,255,0.08)" : "transparent",
-                borderLeft: activePage === item.id ? "3px solid " + C.accent : "3px solid transparent",
+                padding: "11px 20px", display: "flex", alignItems: "center", gap: 12,
+                background: activePage === item.id ? "rgba(0,180,216,0.12)" : "transparent",
+                borderLeft: activePage === item.id ? "3px solid " + (dotColor[item.icon]||C.accent) : "3px solid transparent",
                 cursor: "pointer", transition: "all 0.15s"
               }}
             >
-              <span style={{ fontSize: 15 }}>{iconMap[item.icon]}</span>
+              <div style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: activePage === item.id ? (dotColor[item.icon]||C.accent) : "#8892A4",
+                transition: "all 0.15s", flexShrink: 0
+              }} />
               <span style={{
-                fontSize: 12, fontWeight: 600,
-                color: activePage === item.id ? "#fff" : "#8892A4"
+                fontSize: 12, fontWeight: activePage === item.id ? 700 : 500,
+                color: activePage === item.id ? "#fff" : "#8892A4",
+                letterSpacing: 0.3
               }}>{item.label}</span>
             </div>
           ))}
@@ -292,19 +316,28 @@ const Login = ({ onLogin }) => {
 
   return (
     <div style={{
-      minHeight: "100vh", background: C.dark,
+      minHeight: "100vh",
+      background: "#0D1B2A",
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Segoe UI', sans-serif",
-      backgroundImage: "radial-gradient(ellipse at 20% 50%, #1e3a5f33 0%, transparent 60%)"
+      fontFamily: "'Segoe UI', sans-serif", position: "relative", overflow: "hidden"
     }}>
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        background: "radial-gradient(ellipse at 20% 30%, rgba(0,180,216,0.20) 0%, transparent 55%), radial-gradient(ellipse at 80% 75%, rgba(6,214,160,0.10) 0%, transparent 50%)"
+      }} />
       <div style={{ width: "100%", maxWidth: 400, padding: 20 }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ fontSize: 42, fontWeight: 900, color: "#fff", letterSpacing: 4 }}>APEX</div>
-          <div style={{ fontSize: 11, color: C.accent, letterSpacing: 4, fontWeight: 600, marginTop: 4 }}>
-            SCJ SOLUCIONES LOGISTICAS
+        <div style={{ textAlign: "center", marginBottom: 36, position: "relative", zIndex: 1 }}>
+          <div style={{
+            background: "rgba(255,255,255,0.97)", borderRadius: 24, padding: "18px 24px",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            marginBottom: 22, boxShadow: "0 0 0 1px rgba(0,180,216,0.3), 0 20px 60px rgba(0,0,0,0.5)"
+          }}>
+            <img src={logo} alt="SCJ Logo" style={{ height: 70, display: "block" }} />
           </div>
+          <div style={{ fontSize: 38, fontWeight: 900, color: "#fff", letterSpacing: 8, textShadow: "0 0 40px rgba(0,180,216,0.4)" }}>APEX</div>
+          <div style={{ fontSize: 10, color: C.accent, letterSpacing: 5, fontWeight: 700, marginTop: 6 }}>SCJ SOLUCIONES LOGISTICAS</div>
         </div>
-        <Card style={{ padding: 36 }}>
+        <Card style={{ padding: 36, position: "relative", zIndex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>Bienvenido de vuelta</div>
           <div style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>Ingresa tus credenciales</div>
           <Input label="USUARIO" value={username} onChange={setUsername} placeholder="Tu ID de acceso" />
@@ -338,8 +371,8 @@ const Dashboard = ({ onNavigate }) => {
     { id: "personal",    icon: "Personal", title: "Personal",          sub: "Empleados y tecnicos",    color: "#8B5CF6",  ok: true },
     { id: "referencias", icon: "Referencias", title: "Referencias",       sub: "Catalogo de equipos",     color: "#EC4899",  ok: true },
     { id: "reportes",    icon: "Reportes", title: "Reportes",          sub: "Estadisticas y KPIs",     color: C.accent,   ok: true },
-    { id: "nomina",      icon: "[$]", title: "Nomina",            sub: "Proximamente",            color: C.muted,    ok: false },
-    { id: "kpis",        icon: "[G]", title: "KPIs Avanzados",    sub: "Proximamente",            color: C.muted,    ok: false },
+    { id: "nomina",      icon: "nom", title: "Nomina",            sub: "Proximamente",            color: C.muted,    ok: false },
+    { id: "kpis",        icon: "kpi", title: "KPIs Avanzados",    sub: "Proximamente",            color: C.muted,    ok: false },
   ];
 
   const fecha = new Date().toLocaleDateString("es-CO", {
@@ -347,13 +380,19 @@ const Dashboard = ({ onNavigate }) => {
   });
 
   return (
-    <div>
+    <div style={{ position: "relative" }}>
+      <div style={{
+        position: "absolute", right: 24, bottom: 24, opacity: 0.06,
+        pointerEvents: "none", userSelect: "none", zIndex: 0
+      }}>
+        <img src={logo} alt="" style={{ height: 80, filter: "grayscale(100%)" }} />
+      </div>
       <PageHeader title="Dashboard" subtitle={"Hoy, " + fecha} />
       <div style={{ display: "flex", gap: 14, marginBottom: 28, flexWrap: "wrap" }}>
         <KPI label="SERVICIOS HOY"     value="12" icon="Servicios" color={C.accent} />
         <KPI label="PERSONAL ACTIVO"   value="8"  icon="Personal" color="#8B5CF6" />
         <KPI label="VEHICULOS EN RUTA" value="3"  icon="Vehiculos" color={C.warning} />
-        <KPI label="NOVEDADES"         value="2"  icon="[!]" color={C.danger} />
+        <KPI label="NOVEDADES"         value="2"  icon="!" color={C.danger} />
       </div>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 1, marginBottom: 14 }}>
         MODULOS DEL SISTEMA
@@ -365,7 +404,13 @@ const Dashboard = ({ onNavigate }) => {
             onClick={m.ok ? () => onNavigate(m.id) : null}
             style={{ opacity: m.ok ? 1 : 0.45, position: "relative", overflow: "hidden" }}
           >
-            <div style={{ fontSize: 28, marginBottom: 10 }}>{m.icon}</div>
+            <div style={{
+              width: 44, height: 44, borderRadius: 12, marginBottom: 12,
+              background: m.color + "18", border: "1px solid " + m.color + "25",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", background: m.color }} />
+            </div>
             <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 4 }}>{m.title}</div>
             <div style={{ fontSize: 11, color: m.ok ? C.muted : C.warning }}>{m.sub}</div>
             {m.ok && (
@@ -489,9 +534,9 @@ const Personal = ({ onBack }) => {
       <PageHeader title="Nuevo Usuario" subtitle="Selecciona el perfil" onBack={() => setVista("lista")} />
       <div style={{ maxWidth: 420 }}>
         {[
-          { rol: "admin",    icon: "[A]", label: "Administrador", desc: "Acceso total al sistema" },
-          { rol: "tecnico",  icon: "[T]", label: "Tecnico",       desc: "Servicios e inspecciones" },
-          { rol: "empleado", icon: "[U]", label: "Empleado",      desc: "Operaciones y horarios" },
+          { rol: "admin",    icon: "adm", label: "Administrador", desc: "Acceso total al sistema" },
+          { rol: "tecnico",  icon: "tec", label: "Tecnico",       desc: "Servicios e inspecciones" },
+          { rol: "empleado", icon: "usr", label: "Empleado",      desc: "Operaciones y horarios" },
         ].map(r => (
           <Card key={r.rol} onClick={() => { setRolSel(r.rol); setVista("form"); }}
             style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 16 }}>
@@ -523,9 +568,10 @@ const Personal = ({ onBack }) => {
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <div style={{
                   width: 44, height: 44, borderRadius: 12,
-                  background: C.dark + "12", display: "flex",
-                  alignItems: "center", justifyContent: "center", fontSize: 20
-                }}>[U]</div>
+                  background: "#8B5CF618", border: "1px solid #8B5CF630",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontWeight: 800, color: "#8B5CF6", letterSpacing: 0.5
+                }}>{p.nombre ? p.nombre.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase() : "US"}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{p.nombre}</div>
                   <div style={{ fontSize: 11, color: C.muted }}>{p.id_interno}</div>
@@ -616,7 +662,12 @@ const Vehiculos = ({ onBack }) => {
           {lista.map((v, i) => (
             <Card key={i}>
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{ fontSize: 32 }}>[V]</div>
+                <div style={{
+                width: 44, height: 44, borderRadius: 12,
+                background: "#F59E0B18", border: "1px solid #F59E0B30",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 800, color: "#F59E0B"
+              }}>{v.placa ? v.placa.slice(0,3) : "VEH"}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 800, fontSize: 16 }}>{v.placa}</div>
                   <div style={{ fontSize: 12, color: C.muted }}>{v.modelo}</div>
@@ -768,7 +819,13 @@ const Referencias = ({ onBack }) => {
         {lista.map((r, i) => (
           <Card key={i} onClick={() => setSel(r)}>
             <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-              <div style={{ fontSize: 28 }}>Referencias</div>
+              <div style={{
+              width: 40, height: 40, borderRadius: 10,
+              background: "#EC489918", border: "1px solid #EC489930",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+            }}>
+              <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#EC4899" }} />
+            </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{r.nombre_referencia}</div>
                 <div style={{ fontSize: 11, color: C.success, fontWeight: 600 }}>
@@ -868,7 +925,7 @@ const Servicios = ({ onBack, user }) => {
       <div style={{ maxWidth: 480 }}>
         <Card>
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
-            <span style={{ fontSize: 28 }}>[!]</span>
+            <span style={{ fontSize: 28 }}>NOV</span>
             <div>
               <div style={{ fontWeight: 700 }}>Componente: {novedadComp}</div>
               <div style={{ fontSize: 12, color: C.muted }}>Equipo: {equipo?.nombre_referencia}</div>
@@ -901,7 +958,7 @@ const Servicios = ({ onBack, user }) => {
             border: "2px dashed " + C.border, borderRadius: 10, padding: 20,
             textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer", marginBottom: 14
           }}>
-            [CAM] Adjuntar evidencia fotografica
+            CAM Adjuntar evidencia fotografica
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <Btn onClick={reportarNovedad} variant="danger" style={{ flex: 1 }}>REPORTAR NOVEDAD</Btn>
@@ -939,7 +996,7 @@ const Servicios = ({ onBack, user }) => {
             borderRadius: 10, padding: "10px 16px", marginBottom: 16
           }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.warning }}>
-              [!] {novedades.length} novedad(es) reportada(s)
+              ! {novedades.length} novedad(es) reportada(s)
             </div>
           </div>
         )}
@@ -986,7 +1043,7 @@ const Servicios = ({ onBack, user }) => {
                   borderRadius: 8, padding: "4px 10px",
                   fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
                 }}
-              >[!] NOVEDAD</button>
+              >! NOVEDAD</button>
             </div>
           ))}
           <div style={{ marginTop: 20 }}>
@@ -1005,7 +1062,7 @@ const Servicios = ({ onBack, user }) => {
     <div>
       <PageHeader title="Servicios" onBack={resetServicio} />
       <Card style={{ textAlign: "center", padding: 48, maxWidth: 440 }}>
-        <div style={{ fontSize: 56, marginBottom: 12 }}>[OK]</div>
+        <div style={{ fontSize: 56, marginBottom: 12 }}>OK</div>
         <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Orden Completada</div>
         <div style={{ color: C.muted, marginBottom: 8 }}>{equipo?.nombre_referencia}</div>
         <div style={{ fontSize: 13, color: C.success, fontWeight: 600, marginBottom: 8 }}>
@@ -1013,12 +1070,12 @@ const Servicios = ({ onBack, user }) => {
         </div>
         {novedades.length > 0 && (
           <div style={{ fontSize: 12, color: C.warning, marginBottom: 20 }}>
-            [!] {novedades.length} novedad(es) registrada(s)
+            ! {novedades.length} novedad(es) registrada(s)
           </div>
         )}
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <Btn onClick={resetServicio}>VOLVER AL MENU</Btn>
-          <Btn variant="ghost">[P] VER PDF</Btn>
+          <Btn variant="ghost">P VER PDF</Btn>
         </div>
       </Card>
     </div>
@@ -1031,7 +1088,16 @@ const Servicios = ({ onBack, user }) => {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}>
         {equipos.map(eq => (
           <Card key={eq.id} onClick={() => { setEquipo(eq); setVista("inspeccion"); }} style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>[T]</div>
+            <div style={{
+              width: 56, height: 56, borderRadius: 16, marginBottom: 12,
+              background: "linear-gradient(135deg, #00B4D818, #06D6A012)",
+              border: "1px solid #00B4D830",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#00B4D8", letterSpacing: 1 }}>
+                TEC
+              </div>
+            </div>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>{eq.nombre_referencia}</div>
             <div style={{ fontSize: 12, color: C.success, fontWeight: 600, marginBottom: 12 }}>
               M.O: ${Number(eq.costo_mano_obra).toLocaleString()}
@@ -1056,7 +1122,12 @@ const Servicios = ({ onBack, user }) => {
           <Card key={i} style={{ marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                <div style={{ fontWeight: 900, fontSize: 15, color: C.muted }}>{h.id}</div>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 10,
+                  background: C.dark + "08", border: "1px solid " + C.border,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontWeight: 800, fontSize: 11, color: C.muted
+                }}>{h.id}</div>
                 <div>
                   <div style={{ fontWeight: 700 }}>{h.equipo}</div>
                   <div style={{ fontSize: 11, color: C.muted }}>{h.tecnico} - {h.fecha}</div>
@@ -1077,12 +1148,21 @@ const Servicios = ({ onBack, user }) => {
       <PageHeader title="Servicio Tecnico" subtitle="Gestion de inspecciones y ordenes" onBack={onBack} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14, maxWidth: 700 }}>
         {[
-          { icon: "[+]", label: "Nuevo Servicio",  desc: "Iniciar inspeccion",   action: () => setVista("equipos") },
-          { icon: "[H]", label: "Mi Historial",    desc: "Servicios realizados", action: () => setVista("historial") },
-          { icon: "[P]", label: "Generar PDF",     desc: "Exportar reporte",     action: () => setToast({ msg: "PDF proximamente", type: "warning" }) },
+          { icon: "nuevo", label: "Nuevo Servicio",  desc: "Iniciar inspeccion",   action: () => setVista("equipos") },
+          { icon: "hist", label: "Mi Historial",    desc: "Servicios realizados", action: () => setVista("historial") },
+          { icon: "pdf", label: "Generar PDF",     desc: "Exportar reporte",     action: () => setToast({ msg: "PDF proximamente", type: "warning" }) },
         ].map((item, i) => (
           <Card key={i} onClick={item.action} style={{ textAlign: "center", padding: 28 }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>{item.icon}</div>
+            <div style={{
+              width: 56, height: 56, borderRadius: 16, marginBottom: 12,
+              background: "linear-gradient(135deg, #00B4D818, #06D6A012)",
+              border: "1px solid #00B4D830",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#00B4D8", letterSpacing: 0.5 }}>
+                {(item.icon || "").slice(0,3).toUpperCase()}
+              </div>
+            </div>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>{item.label}</div>
             <div style={{ fontSize: 12, color: C.muted }}>{item.desc}</div>
           </Card>
@@ -1188,7 +1268,7 @@ const Horarios = ({ onBack }) => {
                 <div style={{
                   width: 38, height: 38, borderRadius: 10, background: C.dark + "10",
                   display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18
-                }}>[U]</div>
+                }}>USR</div>
                 <div>
                   <div style={{ fontWeight: 700 }}>{emp}</div>
                   <div style={{ fontSize: 11, color: C.muted }}>
@@ -1221,18 +1301,27 @@ const Horarios = ({ onBack }) => {
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
       <PageHeader title="Control de Horarios" subtitle="Gestion de tiempos y rutas" onBack={onBack} />
       <div style={{ display: "flex", gap: 14, marginBottom: 24, flexWrap: "wrap" }}>
-        <KPI label="PRESENTES HOY" value="7"  icon="[OK]" color={C.success} />
+        <KPI label="PRESENTES HOY" value="7"  icon="OK" color={C.success} />
         <KPI label="AUSENTES"      value="1"  icon="[X]" color={C.danger} />
-        <KPI label="HORAS EXTRA"   value="4h" icon="[!]" color={C.warning} />
+        <KPI label="HORAS EXTRA"   value="4h" icon="!" color={C.warning} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
         {[
           { icon: "Horarios", label: "Asistencia", desc: "Registrar marcas",  action: () => setVista("asistencia") },
-          { icon: "[V]", label: "Rutas Hoy",  desc: "Ver rutas del dia", action: () => setVista("rutas") },
-          { icon: "[D]", label: "Planeacion", desc: "Asignar personal",  action: () => setVista("planeacion") },
+          { icon: "veh", label: "Rutas Hoy",  desc: "Ver rutas del dia", action: () => setVista("rutas") },
+          { icon: "dia", label: "Planeacion", desc: "Asignar personal",  action: () => setVista("planeacion") },
         ].map((item, i) => (
           <Card key={i} onClick={item.action} style={{ textAlign: "center", padding: 28 }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>{item.icon}</div>
+            <div style={{
+              width: 56, height: 56, borderRadius: 16, marginBottom: 12,
+              background: "linear-gradient(135deg, #00B4D818, #06D6A012)",
+              border: "1px solid #00B4D830",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#00B4D8", letterSpacing: 0.5 }}>
+                {(item.icon || "").slice(0,3).toUpperCase()}
+              </div>
+            </div>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>{item.label}</div>
             <div style={{ fontSize: 12, color: C.muted }}>{item.desc}</div>
           </Card>
@@ -1251,16 +1340,27 @@ const Reportes = ({ onBack }) => (
     <div style={{ display: "flex", gap: 14, marginBottom: 28, flexWrap: "wrap" }}>
       <KPI label="SERVICIOS MES"    value="84"  icon="Servicios" color={C.accent} />
       <KPI label="HORAS TRABAJADAS" value="312" icon="Horarios" color="#8B5CF6" />
-      <KPI label="NOVEDADES MES"    value="7"   icon="[!]" color={C.danger} />
-      <KPI label="EFICIENCIA"       value="94%" icon="[G]" color={C.success} />
+      <KPI label="NOVEDADES MES"    value="7"   icon="!" color={C.danger} />
+      <KPI label="EFICIENCIA"       value="94%" icon="G" color={C.success} />
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
-      {["Reporte de Servicios","Control de Asistencia","Novedades del Mes","Rendimiento Tecnicos"].map((r, i) => (
+      {[
+        { titulo: "Reporte de Servicios",   color: "#00B4D8" },
+        { titulo: "Control de Asistencia",  color: "#8B5CF6" },
+        { titulo: "Novedades del Mes",       color: "#EF4444" },
+        { titulo: "Rendimiento Tecnicos",    color: "#06D6A0" },
+      ].map((r, i) => (
         <Card key={i}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>[P]</div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>{r}</div>
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>PDF - Excel</div>
-          <Btn variant="ghost" style={{ fontSize: 11 }}>GENERAR &#8594;</Btn>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, marginBottom: 14,
+            background: r.color + "18", border: "1px solid " + r.color + "30",
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <div style={{ width: 16, height: 16, borderRadius: "50%", background: r.color }} />
+          </div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{r.titulo}</div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>PDF · Excel</div>
+          <Btn variant="ghost" style={{ fontSize: 11 }}>GENERAR</Btn>
         </Card>
       ))}
     </div>
