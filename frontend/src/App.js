@@ -430,12 +430,16 @@ const Dashboard = ({ onNavigate }) => {
 // MODULO PERSONAL
 // ============================================================
 const Personal = ({ onBack }) => {
-  const [vista, setVista]     = useState("lista");
-  const [rolSel, setRolSel]   = useState(null);
-  const [lista, setLista]     = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [toast, setToast]     = useState(null);
-  const [form, setForm]       = useState({
+  const [vista, setVista]       = useState("lista");
+  const [rolSel, setRolSel]     = useState(null);
+  const [lista, setLista]       = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [toast, setToast]       = useState(null);
+  const [filtroRol, setFiltroRol] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
+  const [empSel, setEmpSel]     = useState(null); // para detalle/edicion
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [form, setForm] = useState({
     nombre: "", doc: "", pass: "", empresa: "Apex", costo: "", salario: "", extra: ""
   });
 
@@ -444,14 +448,9 @@ const Personal = ({ onBack }) => {
     try {
       const r = await fetch(API_URL + "/personal");
       const d = await r.json();
-      setLista(d);
+      setLista(Array.isArray(d) ? d : []);
     } catch {
-      setLista([
-        { nombre: "Carlos Mendoza", rol: "tecnico",  id_interno: "APXTEC001", empresa: "Apex" },
-        { nombre: "Laura Gomez",    rol: "empleado", id_interno: "APXEMP001" },
-        { nombre: "Diego Ruiz",     rol: "tecnico",  id_interno: "APXTEC002", empresa: "Externo" },
-        { nombre: "Ana Torres",     rol: "admin",    id_interno: "APXADM001" },
-      ]);
+      setLista([]);
     }
     setLoading(false);
   };
@@ -459,7 +458,8 @@ const Personal = ({ onBack }) => {
   useEffect(() => { cargar(); }, []);
 
   const nuevoId = (() => {
-    const n = String(lista.length + 1).padStart(3, "0");
+    const activos = lista.filter(p => p.rol === rolSel).length;
+    const n = String(activos + 1).padStart(3, "0");
     if (rolSel === "tecnico")  return "APXTEC" + n;
     if (rolSel === "empleado") return "APXEMP" + n;
     return "APXADM" + n;
@@ -468,314 +468,140 @@ const Personal = ({ onBack }) => {
   const guardar = async () => {
     if (!form.nombre) { setToast({ msg: "El nombre es obligatorio", type: "error" }); return; }
     try {
-      await fetch(API_URL + "/personal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre: form.nombre, doc: form.doc,
-          user: nuevoId, pass: form.pass || "1234",
-          rol: rolSel, id_interno: nuevoId,
-          empresa: form.empresa,
-          costo: parseFloat(form.costo || 0),
-          salario: parseFloat(form.salario || 0),
-          extra: parseFloat(form.extra || 0),
-        }),
-      });
+      if (modoEdicion && empSel) {
+        await fetch(API_URL + "/personal/" + empSel.id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nombre: form.nombre, doc: form.doc,
+            user: empSel.username, pass: form.pass || "1234",
+            rol: empSel.rol, id_interno: empSel.id_interno,
+            empresa: form.empresa,
+            costo: parseFloat(form.costo || 0),
+            salario: parseFloat(form.salario || 0),
+            extra: parseFloat(form.extra || 0),
+          }),
+        });
+        setToast({ msg: "Usuario actualizado correctamente", type: "success" });
+      } else {
+        await fetch(API_URL + "/personal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nombre: form.nombre, doc: form.doc,
+            user: nuevoId, pass: form.pass || "1234",
+            rol: rolSel, id_interno: nuevoId,
+            empresa: form.empresa,
+            costo: parseFloat(form.costo || 0),
+            salario: parseFloat(form.salario || 0),
+            extra: parseFloat(form.extra || 0),
+          }),
+        });
+        setToast({ msg: "Usuario creado: " + nuevoId, type: "success" });
+      }
+    } catch { setToast({ msg: "Error al guardar", type: "error" }); }
+    setTimeout(() => {
+      setVista("lista"); setModoEdicion(false); setEmpSel(null);
+      cargar();
+      setForm({ nombre:"",doc:"",pass:"",empresa:"Apex",costo:"",salario:"",extra:"" });
+    }, 1400);
+  };
+
+  const toggleEstado = async (emp) => {
+    try {
+      await fetch(`${API_URL}/personal/${emp.id}/estado?activo=${!emp.activo}`, { method: "PATCH" });
+      setLista(prev => prev.map(p => p.id === emp.id ? { ...p, activo: !emp.activo } : p));
+      setEmpSel(prev => prev ? { ...prev, activo: !prev.activo } : null);
     } catch {}
-    setToast({ msg: "Usuario creado: " + nuevoId, type: "success" });
-    setTimeout(() => { setVista("lista"); cargar(); setForm({ nombre:"",doc:"",pass:"",empresa:"Apex",costo:"",salario:"",extra:"" }); }, 1400);
+  };
+
+  const abrirEdicion = (emp) => {
+    setEmpSel(emp);
+    setModoEdicion(true);
+    setRolSel(emp.rol);
+    setForm({
+      nombre: emp.nombre || "",
+      doc: emp.documento || "",
+      pass: "",
+      empresa: emp.empresa || "Apex",
+      costo: emp.costo_servicio || "",
+      salario: emp.salario_base || "",
+      extra: emp.tasa_extra || ""
+    });
+    setVista("form");
   };
 
   const rolColor = { tecnico: C.accent, empleado: C.success, admin: "#8B5CF6" };
   const rolLabel = { tecnico: "TECNICO", empleado: "EMPLEADO", admin: "ADMIN" };
 
-  // VISTA FORMULARIO ROL ESPECIFICO
-  if (vista === "form" && rolSel) return (
+  const listaFiltrada = (Array.isArray(lista) ? lista : []).filter(p => {
+    if (filtroRol && p.rol !== filtroRol) return false;
+    if (filtroEstado === "activo" && !p.activo) return false;
+    if (filtroEstado === "inactivo" && p.activo !== false) return false;
+    return true;
+  });
+
+  // ---- VISTA DETALLE ----
+  if (vista === "detalle" && empSel) return (
     <div>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader title={"Nuevo " + (rolLabel[rolSel] || rolSel)} onBack={() => setVista("roles")} />
-      <div style={{ maxWidth: 480 }}>
-        <Card>
-          <div style={{
-            background: C.dark, borderRadius: 10, padding: "16px 20px",
-            marginBottom: 20, textAlign: "center"
-          }}>
-            <div style={{ fontSize: 10, color: "#8892A4", letterSpacing: 1 }}>ID GENERADO</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", letterSpacing: 2 }}>{nuevoId}</div>
-          </div>
-          <Input label="NOMBRE COMPLETO" value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} />
-          <Input label="DOCUMENTO"       value={form.doc}    onChange={v => setForm({ ...form, doc: v })} />
-          <Input label="CONTRASENA"      value={form.pass}   onChange={v => setForm({ ...form, pass: v })} type="password" placeholder="Minimo 4 caracteres" />
-          {rolSel === "tecnico" && (
-            <>
-              <Sel label="EMPRESA" value={form.empresa} onChange={v => setForm({ ...form, empresa: v })}
-                options={[{ value: "Apex", label: "Apex" }, { value: "Externo", label: "Externo" }]} />
-              <Input label="COSTO SERVICIO ($)" value={form.costo} onChange={v => setForm({ ...form, costo: v })} />
-            </>
-          )}
-          {rolSel === "empleado" && (
-            <>
-              <Input label="SALARIO BASE ($)"     value={form.salario} onChange={v => setForm({ ...form, salario: v })} />
-              <Input label="VALOR HORA EXTRA ($)" value={form.extra}   onChange={v => setForm({ ...form, extra: v })} />
-            </>
-          )}
-          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            <Btn onClick={guardar} style={{ flex: 1 }}>CREAR CUENTA</Btn>
-            <Btn variant="ghost" onClick={() => setVista("roles")}>Cancelar</Btn>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-
-  // VISTA SELECCION ROL
-  if (vista === "roles") return (
-    <div>
-      <PageHeader title="Nuevo Usuario" subtitle="Selecciona el perfil" onBack={() => setVista("lista")} />
-      <div style={{ maxWidth: 420 }}>
-        {[
-          { rol: "admin",    icon: "adm", label: "Administrador", desc: "Acceso total al sistema" },
-          { rol: "tecnico",  icon: "tec", label: "Tecnico",       desc: "Servicios e inspecciones" },
-          { rol: "empleado", icon: "usr", label: "Empleado",      desc: "Operaciones y horarios" },
-        ].map(r => (
-          <Card key={r.rol} onClick={() => { setRolSel(r.rol); setVista("form"); }}
-            style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ fontSize: 28 }}>{r.icon}</div>
-            <div>
-              <div style={{ fontWeight: 700, marginBottom: 2 }}>{r.label}</div>
-              <div style={{ fontSize: 12, color: C.muted }}>{r.desc}</div>
-            </div>
-            <div style={{ marginLeft: "auto", color: C.muted }}>&#8594;</div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-
-  // VISTA LISTA
-  return (
-    <div>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader
-        title="Gestion de Personal" subtitle="Colaboradores registrados"
-        onBack={onBack}
-        action={<Btn onClick={() => setVista("roles")}>+ NUEVO USUARIO</Btn>}
-      />
-      {loading ? <Spinner /> : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-          {lista.map((p, i) => (
-            <Card key={i}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12,
-                  background: "#8B5CF618", border: "1px solid #8B5CF630",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 11, fontWeight: 800, color: "#8B5CF6", letterSpacing: 0.5
-                }}>{p.nombre ? p.nombre.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase() : "US"}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{p.nombre}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{p.id_interno}</div>
-                </div>
-                <Badge color={rolColor[p.rol] || C.muted}>
-                  {(rolLabel[p.rol] || p.rol || "").toUpperCase()}
-                </Badge>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================================
-// MODULO VEHICULOS
-// ============================================================
-const Vehiculos = ({ onBack }) => {
-  const [vista, setVista]     = useState("lista");
-  const [lista, setLista]     = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [toast, setToast]     = useState(null);
-  const [form, setForm]       = useState({ placa: "", modelo: "" });
-
-  const cargar = async () => {
-    setLoading(true);
-    try {
-      const r = await fetch(API_URL + "/vehiculos");
-      setLista(await r.json());
-    } catch {
-      setLista([
-        { placa: "ABC-123", modelo: "NPR 500 - 2022", estado: "disponible" },
-        { placa: "XYZ-456", modelo: "NQR 700 - 2023", estado: "en ruta" },
-        { placa: "DEF-789", modelo: "NKR 300 - 2021", estado: "mantenimiento" },
-      ]);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => { cargar(); }, []);
-
-  const guardar = async () => {
-    if (!form.placa) { setToast({ msg: "La placa es obligatoria", type: "error" }); return; }
-    const placa = form.placa.toUpperCase().trim();
-    try {
-      await fetch(API_URL + "/vehiculos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placa, modelo: form.modelo }),
-      });
-    } catch {}
-    setLista([...lista, { placa, modelo: form.modelo, estado: "disponible" }]);
-    setToast({ msg: "Vehiculo " + placa + " registrado", type: "success" });
-    setTimeout(() => { setVista("lista"); setForm({ placa: "", modelo: "" }); }, 1000);
-  };
-
-  const estadoColor = { disponible: C.success, "en ruta": C.warning, mantenimiento: C.danger };
-
-  if (vista === "form") return (
-    <div>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader title="Nuevo Vehiculo" onBack={() => setVista("lista")} />
-      <div style={{ maxWidth: 440 }}>
-        <Card>
-          <Input label="PLACA" value={form.placa} onChange={v => setForm({ ...form, placa: v })} placeholder="Ej: ABC-123" />
-          <Input label="MODELO / DESCRIPCION" value={form.modelo} onChange={v => setForm({ ...form, modelo: v })} placeholder="Ej: NPR 500 - 2025" />
-          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            <Btn onClick={guardar} style={{ flex: 1 }}>GUARDAR VEHICULO</Btn>
-            <Btn variant="ghost" onClick={() => setVista("lista")}>Cancelar</Btn>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-
-  return (
-    <div>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader
-        title="Gestion de Vehiculos" subtitle="Flota registrada"
-        onBack={onBack}
-        action={<Btn onClick={() => setVista("form")}>+ REGISTRAR VEHICULO</Btn>}
-      />
-      {loading ? <Spinner /> : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-          {lista.map((v, i) => (
-            <Card key={i}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{
-                width: 44, height: 44, borderRadius: 12,
-                background: "#F59E0B18", border: "1px solid #F59E0B30",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 11, fontWeight: 800, color: "#F59E0B"
-              }}>{v.placa ? v.placa.slice(0,3) : "VEH"}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 800, fontSize: 16 }}>{v.placa}</div>
-                  <div style={{ fontSize: 12, color: C.muted }}>{v.modelo}</div>
-                </div>
-                <Badge color={estadoColor[v.estado] || C.muted}>
-                  {(v.estado || "").toUpperCase()}
-                </Badge>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================================
-// MODULO REFERENCIAS
-// ============================================================
-const Referencias = ({ onBack }) => {
-  const [vista, setVista] = useState("lista");
-  const [lista, setLista] = useState([]);
-  const [sel, setSel]     = useState(null);
-  const [toast, setToast] = useState(null);
-  const [checks, setChecks] = useState({});
-  const [form, setForm]   = useState({ nombre: "", desc: "", costo: "", piezas: "" });
-
-  const cargar = async () => {
-    try {
-      const r = await fetch(API_URL + "/referencias");
-      setLista(await r.json());
-    } catch {
-      setLista([
-        { id: 1, nombre_referencia: "Compresor Industrial",  descripcion: "Alta presion",  costo_mano_obra: 85000,  piezas_json: JSON.stringify(["Motor","Bomba","Valvula","Manometro","Filtro"]) },
-        { id: 2, nombre_referencia: "Montacargas Electrico", descripcion: "Cap. 2.5 ton",  costo_mano_obra: 120000, piezas_json: JSON.stringify(["Motor traccion","Hidraulico","Bateria","Panel"]) },
-        { id: 3, nombre_referencia: "Banda Transportadora",  descripcion: "Longitud 8m",   costo_mano_obra: 60000,  piezas_json: JSON.stringify(["Cinta","Rodillos","Motor","Tensores"]) },
-      ]);
-    }
-  };
-
-  useEffect(() => { cargar(); }, []);
-
-  const parsePiezas = ref => {
-    try { return JSON.parse(ref.piezas_json || "[]"); } catch { return []; }
-  };
-
-  const guardar = async () => {
-    if (!form.nombre) { setToast({ msg: "El nombre es obligatorio", type: "error" }); return; }
-    const piezas = form.piezas
-      ? JSON.stringify(form.piezas.split(",").map(p => p.trim()).filter(Boolean))
-      : "[]";
-    try {
-      await fetch(API_URL + "/referencias", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre: form.nombre, descripcion: form.desc,
-          costo: parseFloat(form.costo || 0), piezas_json: piezas
-        }),
-      });
-    } catch {}
-    setToast({ msg: "Referencia guardada", type: "success" });
-    setTimeout(() => { setVista("lista"); cargar(); setForm({ nombre:"",desc:"",costo:"",piezas:"" }); }, 1000);
-  };
-
-  // DETALLE REFERENCIA
-  if (sel) return (
-    <div>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader title={sel.nombre_referencia} subtitle="Detalle de referencia"
-        onBack={() => { setSel(null); setChecks({}); }} />
+      <PageHeader title="Detalle Empleado" onBack={() => { setVista("lista"); setEmpSel(null); }} />
       <div style={{ maxWidth: 560 }}>
-        <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
-            <div>
-              <div style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>{sel.descripcion}</div>
-              <div style={{ fontSize: 16, color: C.success, fontWeight: 700 }}>
-                M.O: ${Number(sel.costo_mano_obra).toLocaleString()}
+        <Card style={{ marginBottom: 16 }}>
+          {/* Header tarjeta */}
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: "50%",
+              background: (rolColor[empSel.rol] || C.accent) + "20",
+              border: `3px solid ${rolColor[empSel.rol] || C.accent}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20, fontWeight: 900, color: rolColor[empSel.rol] || C.accent
+            }}>
+              {empSel.nombre?.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase()}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>{empSel.nombre}</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                <span style={{
+                  padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                  background: (rolColor[empSel.rol] || C.accent) + "20",
+                  color: rolColor[empSel.rol] || C.accent
+                }}>{rolLabel[empSel.rol] || empSel.rol?.toUpperCase()}</span>
+                <span style={{
+                  padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                  background: empSel.activo !== false ? "#06D6A015" : "#EF444415",
+                  color: empSel.activo !== false ? "#06D6A0" : "#EF4444"
+                }}>{empSel.activo !== false ? "ACTIVO" : "INACTIVO"}</span>
               </div>
             </div>
-            <Badge color={C.accent}>{parsePiezas(sel).length} piezas</Badge>
           </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 1, marginBottom: 12 }}>
-            COMPONENTES
+
+          {/* Info grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            {[
+              { label: "ID INTERNO",    value: empSel.id_interno },
+              { label: "DOCUMENTO",     value: empSel.documento || "-" },
+              { label: "USUARIO",       value: empSel.username },
+              { label: "EMPRESA",       value: empSel.empresa || "-" },
+              { label: "SALARIO BASE",  value: empSel.salario_base ? `$${Number(empSel.salario_base).toLocaleString()}` : "-" },
+              { label: "VALOR H. EXTRA",value: empSel.tasa_extra ? `$${Number(empSel.tasa_extra).toLocaleString()}` : "-" },
+            ].map(f => (
+              <div key={f.label} style={{
+                padding: "10px 14px", background: C.bg, borderRadius: 8, border: `1px solid ${C.border}`
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 3 }}>{f.label}</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{f.value}</div>
+              </div>
+            ))}
           </div>
-          {parsePiezas(sel).map((p, i) => (
-            <div key={i} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 14px",
-              background: checks[p] ? C.success + "08" : "#FAFBFD",
-              borderRadius: 10, marginBottom: 8,
-              border: "1px solid " + (checks[p] ? C.success + "30" : C.border)
-            }}>
-              <input
-                type="checkbox" checked={!!checks[p]}
-                onChange={e => setChecks({ ...checks, [p]: e.target.checked })}
-                style={{ width: 18, height: 18, cursor: "pointer", accentColor: C.dark }}
-              />
-              <span style={{
-                fontSize: 13,
-                textDecoration: checks[p] ? "line-through" : "none",
-                color: checks[p] ? C.muted : C.text
-              }}>{p}</span>
-            </div>
-          ))}
-          <div style={{ marginTop: 16 }}>
-            <Btn variant="ghost" onClick={() => { setSel(null); setVista("form_edit"); }}>
-              EDITAR REFERENCIA
+
+          {/* Acciones */}
+          <div style={{ display: "flex", gap: 10 }}>
+            <Btn onClick={() => abrirEdicion(empSel)} style={{ flex: 1 }}>EDITAR</Btn>
+            <Btn variant="ghost"
+              onClick={() => toggleEstado(empSel)}
+              style={{ color: empSel.activo !== false ? C.danger : "#06D6A0", borderColor: empSel.activo !== false ? C.danger : "#06D6A0" }}>
+              {empSel.activo !== false ? "DESACTIVAR" : "ACTIVAR"}
             </Btn>
           </div>
         </Card>
@@ -783,420 +609,260 @@ const Referencias = ({ onBack }) => {
     </div>
   );
 
-  // FORMULARIO NUEVA REFERENCIA
-  if (vista === "form") return (
+  // ---- VISTA FORM (crear o editar) ----
+  if (vista === "form" && rolSel) return (
     <div>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader title="Nueva Referencia" onBack={() => setVista("lista")} />
+      <PageHeader
+        title={modoEdicion ? "Editar " + (rolLabel[rolSel] || rolSel) : "Nuevo " + (rolLabel[rolSel] || rolSel)}
+        onBack={() => { setVista(modoEdicion ? "detalle" : "roles"); setModoEdicion(false); }} />
       <div style={{ maxWidth: 480 }}>
         <Card>
-          <Input label="NOMBRE REFERENCIA" value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} />
-          <Input label="DESCRIPCION"       value={form.desc}   onChange={v => setForm({ ...form, desc: v })} />
-          <Input label="COSTO M.O ($)"     value={form.costo}  onChange={v => setForm({ ...form, costo: v })} />
-          <Input
-            label="COMPONENTES (separados por coma)"
-            value={form.piezas} onChange={v => setForm({ ...form, piezas: v })}
-            placeholder="Motor, Bomba, Cable, Estructura"
-          />
-          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            <Btn onClick={guardar} style={{ flex: 1 }}>GUARDAR REFERENCIA</Btn>
-            <Btn variant="ghost" onClick={() => setVista("lista")}>Cancelar</Btn>
-          </div>
+          {!modoEdicion && (
+            <div style={{
+              background: C.dark, borderRadius: 10, padding: "16px 20px",
+              marginBottom: 20, textAlign: "center"
+            }}>
+              <div style={{ fontSize: 10, color: "#8892A4", letterSpacing: 1 }}>ID GENERADO</div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", letterSpacing: 2 }}>{nuevoId}</div>
+            </div>
+          )}
+          <Input label="NOMBRE COMPLETO" value={form.nombre} onChange={v => setForm({ ...form, nombre: v })} />
+          <Input label="DOCUMENTO"       value={form.doc}    onChange={v => setForm({ ...form, doc: v })} />
+          <Input label="CONTRASENA"      value={form.pass}   onChange={v => setForm({ ...form, pass: v })} type="password"
+            placeholder={modoEdicion ? "Dejar vacio para no cambiar" : "Minimo 4 caracteres"} />
+          {(rolSel === "tecnico") && (
+            <>
+              <Sel label="EMPRESA" value={form.empresa} onChange={v => setForm({ ...form, empresa: v })}
+                options={[{ value: "Apex", label: "Apex" }, { value: "Externo", label: "Externo" }]} />
+              <Input label="COSTO SERVICIO ($)" value={form.costo} onChange={v => setForm({ ...form, costo: v })} />
+            </>
+          )}
+          {(rolSel === "empleado" || rolSel === "tecnico") && (
+            <>
+              <Input label="SALARIO BASE ($)"      value={form.salario} onChange={v => setForm({ ...form, salario: v })} />
+              <Input label="VALOR HORA EXTRA ($)"  value={form.extra}   onChange={v => setForm({ ...form, extra: v })} />
+            </>
+          )}
+          <Btn onClick={guardar} style={{ marginTop: 8, width: "100%" }}>
+            {modoEdicion ? "GUARDAR CAMBIOS" : "CREAR USUARIO"}
+          </Btn>
         </Card>
       </div>
     </div>
   );
 
-  // LISTA
-  return (
+  // ---- VISTA SELECCION ROL ----
+  if (vista === "roles") return (
     <div>
-      <PageHeader
-        title="Catalogo de Referencias" subtitle="Equipos y componentes"
-        onBack={onBack}
-        action={<Btn onClick={() => setVista("form")}>+ AGREGAR REFERENCIA</Btn>}
-      />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-        {lista.map((r, i) => (
-          <Card key={i} onClick={() => setSel(r)}>
-            <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+      <PageHeader title="Nuevo Usuario" subtitle="Selecciona el perfil" onBack={() => setVista("lista")} />
+      <div style={{ maxWidth: 480 }}>
+        {[
+          { rol: "admin",    label: "Administrador", desc: "Acceso total al sistema",    icon: "adm" },
+          { rol: "tecnico",  label: "Tecnico",        desc: "Servicios e inspecciones",   icon: "tec" },
+          { rol: "empleado", label: "Empleado",       desc: "Operaciones y horarios",     icon: "usr" },
+        ].map(r => (
+          <Card key={r.rol} onClick={() => { setRolSel(r.rol); setVista("form"); }}
+            style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               <div style={{
-              width: 40, height: 40, borderRadius: 10,
-              background: "#EC489918", border: "1px solid #EC489930",
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-            }}>
-              <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#EC4899" }} />
-            </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{r.nombre_referencia}</div>
-                <div style={{ fontSize: 11, color: C.success, fontWeight: 600 }}>
-                  {parsePiezas(r).length} componentes - ${Number(r.costo_mano_obra).toLocaleString()}
-                </div>
-                <div style={{ fontSize: 10, color: C.muted }}>{r.descripcion}</div>
-              </div>
-              <span style={{ color: C.muted }}>&#8594;</span>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// MODULO SERVICIOS (con cronometro real)
-// ============================================================
-const Servicios = ({ onBack, user }) => {
-  const [vista, setVista]       = useState("menu");
-  const [equipos, setEquipos]   = useState([]);
-  const [equipo, setEquipo]     = useState(null);
-  const [checks, setChecks]     = useState({});
-  const [novedadComp, setNovedadComp] = useState(null);
-  const [tipoNov, setTipoNov]   = useState("");
-  const [obsNov, setObsNov]     = useState("");
-  const [iniciado, setIniciado] = useState(false);
-  const [timer, setTimer]       = useState(0);
-  const [novedades, setNovedades] = useState([]);
-  const [toast, setToast]       = useState(null);
-  const [historial, setHistorial] = useState([]);
-  const timerRef                = useRef(null);
-
-  const cargarEquipos = async () => {
-    try {
-      const r = await fetch(API_URL + "/referencias");
-      setEquipos(await r.json());
-    } catch {
-      setEquipos([
-        { id: 1, nombre_referencia: "Compresor Industrial",  costo_mano_obra: 85000,  piezas_json: JSON.stringify(["Motor","Bomba","Valvula","Manometro","Filtro","Correas"]) },
-        { id: 2, nombre_referencia: "Montacargas Electrico", costo_mano_obra: 120000, piezas_json: JSON.stringify(["Motor traccion","Hidraulico","Bateria","Panel","Frenos"]) },
-        { id: 3, nombre_referencia: "Banda Transportadora",  costo_mano_obra: 60000,  piezas_json: JSON.stringify(["Cinta","Rodillos","Motor reductor","Tensores","Estructura"]) },
-      ]);
-    }
-  };
-
-  useEffect(() => { cargarEquipos(); return () => clearInterval(timerRef.current); }, []);
-
-  const iniciarTimer = () => {
-    setIniciado(true);
-    timerRef.current = setInterval(() => setTimer(t => t + 1), 1000);
-    setToast({ msg: "Inspeccion iniciada", type: "success" });
-  };
-
-  const finalizar = async () => {
-    clearInterval(timerRef.current);
-    try {
-      await fetch(API_URL + "/ordenes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tecnico_id: user?.id || 1,
-          referencia_id: equipo?.id,
-          tiempo_total: timer,
-          novedades_json: JSON.stringify(novedades),
-        }),
-      });
-    } catch {}
-    setVista("completado");
-  };
-
-  const reportarNovedad = () => {
-    if (!tipoNov) { setToast({ msg: "Selecciona el tipo de novedad", type: "error" }); return; }
-    setNovedades([...novedades, { componente: novedadComp, tipo: tipoNov, obs: obsNov }]);
-    setToast({ msg: "Novedad reportada: " + novedadComp, type: "warning" });
-    setNovedadComp(null); setTipoNov(""); setObsNov("");
-  };
-
-  const resetServicio = () => {
-    clearInterval(timerRef.current);
-    setVista("menu"); setEquipo(null); setChecks({});
-    setTimer(0); setIniciado(false); setNovedades([]);
-  };
-
-  const fmt = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
-
-  const parsePiezas = eq => {
-    try { return JSON.parse(eq?.piezas_json || "[]"); } catch { return []; }
-  };
-
-  // FORMULARIO NOVEDAD
-  if (novedadComp) return (
-    <div>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader title="Reporte de Novedad" onBack={() => setNovedadComp(null)} />
-      <div style={{ maxWidth: 480 }}>
-        <Card>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
-            <span style={{ fontSize: 28 }}>NOV</span>
-            <div>
-              <div style={{ fontWeight: 700 }}>Componente: {novedadComp}</div>
-              <div style={{ fontSize: 12, color: C.muted }}>Equipo: {equipo?.nombre_referencia}</div>
-            </div>
-          </div>
-          <Sel label="TIPO DE NOVEDAD" value={tipoNov} onChange={setTipoNov} options={[
-            { value: "", label: "Seleccionar..." },
-            { value: "Pieza Rota / Quebrada",       label: "Pieza Rota / Quebrada" },
-            { value: "Averia de Transporte",         label: "Averia de Transporte (Rayon)" },
-            { value: "Defecto de Fabrica",           label: "Defecto de Fabrica" },
-            { value: "Falta de Herraje",             label: "Falta de Herraje / Tornilleria" },
-            { value: "Medida Incorrecta",            label: "Pieza con Medida Incorrecta" },
-            { value: "Otro",                         label: "Otro (Especificar)" },
-          ]} />
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 1, marginBottom: 6 }}>
-              OBSERVACIONES
-            </div>
-            <textarea
-              rows={3} value={obsNov} onChange={e => setObsNov(e.target.value)}
-              placeholder="Describe la novedad..."
-              style={{
-                width: "100%", padding: "11px 14px", borderRadius: 10, fontSize: 14,
-                border: "1px solid " + C.border, background: "#FAFBFD",
-                resize: "none", fontFamily: "inherit", boxSizing: "border-box"
-              }}
-            />
-          </div>
-          <div style={{
-            border: "2px dashed " + C.border, borderRadius: 10, padding: 20,
-            textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer", marginBottom: 14
-          }}>
-            CAM Adjuntar evidencia fotografica
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <Btn onClick={reportarNovedad} variant="danger" style={{ flex: 1 }}>REPORTAR NOVEDAD</Btn>
-            <Btn variant="ghost" onClick={() => setNovedadComp(null)}>Cancelar</Btn>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-
-  // INSPECCION ACTIVA
-  if (vista === "inspeccion" && equipo) return (
-    <div>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader
-        title="Inspeccion Activa" subtitle={equipo.nombre_referencia}
-        onBack={() => { resetServicio(); setVista("equipos"); }}
-      />
-      <div style={{ maxWidth: 560 }}>
-        {iniciado && (
-          <div style={{
-            background: C.success + "12", border: "1px solid " + C.success + "30",
-            borderRadius: 10, padding: "12px 16px", marginBottom: 20,
-            display: "flex", justifyContent: "space-between", alignItems: "center"
-          }}>
-            <span style={{ fontSize: 13, color: C.success, fontWeight: 700 }}>Inspeccion en curso</span>
-            <span style={{ fontSize: 22, color: C.dark, fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
-              Horarios {fmt(timer)}
-            </span>
-          </div>
-        )}
-        {novedades.length > 0 && (
-          <div style={{
-            background: C.warning + "12", border: "1px solid " + C.warning + "30",
-            borderRadius: 10, padding: "10px 16px", marginBottom: 16
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.warning }}>
-              ! {novedades.length} novedad(es) reportada(s)
-            </div>
-          </div>
-        )}
-        <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 16 }}>{equipo.nombre_referencia}</div>
-              <div style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>
-                M.O: ${Number(equipo.costo_mano_obra).toLocaleString()}
+                width: 44, height: 44, borderRadius: 10, background: C.bg,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontWeight: 700, fontSize: 12, color: C.muted, border: `1px solid ${C.border}`
+              }}>{r.icon}</div>
+              <div>
+                <div style={{ fontWeight: 700 }}>{r.label}</div>
+                <div style={{ fontSize: 12, color: C.muted }}>{r.desc}</div>
               </div>
             </div>
-            <div style={{ fontSize: 13, color: C.muted }}>
-              {Object.values(checks).filter(Boolean).length}/{parsePiezas(equipo).length} CHECK
-            </div>
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 1, marginBottom: 12 }}>
-            LISTA DE COMPONENTES
-          </div>
-          {parsePiezas(equipo).map((p, i) => (
-            <div key={i} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "10px 14px",
-              background: checks[p] ? C.success + "08" : "#FAFBFD",
-              borderRadius: 10, marginBottom: 8,
-              border: "1px solid " + (checks[p] ? C.success + "30" : C.border)
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input
-                  type="checkbox" checked={!!checks[p]}
-                  onChange={e => setChecks({ ...checks, [p]: e.target.checked })}
-                  style={{ width: 18, height: 18, cursor: "pointer", accentColor: C.dark }}
-                />
-                <span style={{
-                  fontSize: 13,
-                  textDecoration: checks[p] ? "line-through" : "none",
-                  color: checks[p] ? C.muted : C.text
-                }}>{p}</span>
-              </div>
-              <button
-                onClick={() => setNovedadComp(p)}
-                style={{
-                  background: C.danger + "10", color: C.danger,
-                  border: "1px solid " + C.danger + "20",
-                  borderRadius: 8, padding: "4px 10px",
-                  fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
-                }}
-              >! NOVEDAD</button>
-            </div>
-          ))}
-          <div style={{ marginTop: 20 }}>
-            {!iniciado
-              ? <Btn onClick={iniciarTimer} style={{ width: "100%", padding: 14 }}>INICIAR INSPECCION</Btn>
-              : <Btn variant="success" onClick={finalizar} style={{ width: "100%", padding: 14 }}>FINALIZAR Y CERRAR ORDEN</Btn>
-            }
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-
-  // ORDEN COMPLETADA
-  if (vista === "completado") return (
-    <div>
-      <PageHeader title="Servicios" onBack={resetServicio} />
-      <Card style={{ textAlign: "center", padding: 48, maxWidth: 440 }}>
-        <div style={{ fontSize: 56, marginBottom: 12 }}>OK</div>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Orden Completada</div>
-        <div style={{ color: C.muted, marginBottom: 8 }}>{equipo?.nombre_referencia}</div>
-        <div style={{ fontSize: 13, color: C.success, fontWeight: 600, marginBottom: 8 }}>
-          Tiempo: {fmt(timer)} - M.O: ${Number(equipo?.costo_mano_obra || 0).toLocaleString()}
-        </div>
-        {novedades.length > 0 && (
-          <div style={{ fontSize: 12, color: C.warning, marginBottom: 20 }}>
-            ! {novedades.length} novedad(es) registrada(s)
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <Btn onClick={resetServicio}>VOLVER AL MENU</Btn>
-          <Btn variant="ghost">P VER PDF</Btn>
-        </div>
-      </Card>
-    </div>
-  );
-
-  // SELECCION EQUIPO
-  if (vista === "equipos") return (
-    <div>
-      <PageHeader title="Seleccionar Equipo" subtitle="En que equipo vas a trabajar?" onBack={() => setVista("menu")} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}>
-        {equipos.map(eq => (
-          <Card key={eq.id} onClick={() => { setEquipo(eq); setVista("inspeccion"); }} style={{ textAlign: "center" }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: 16, marginBottom: 12,
-              background: "linear-gradient(135deg, #00B4D818, #06D6A012)",
-              border: "1px solid #00B4D830",
-              display: "flex", alignItems: "center", justifyContent: "center"
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "#00B4D8", letterSpacing: 1 }}>
-                TEC
-              </div>
-            </div>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>{eq.nombre_referencia}</div>
-            <div style={{ fontSize: 12, color: C.success, fontWeight: 600, marginBottom: 12 }}>
-              M.O: ${Number(eq.costo_mano_obra).toLocaleString()}
-            </div>
-            <Badge color={C.accent}>{parsePiezas(eq).length} componentes</Badge>
+            <span style={{ color: C.muted, fontSize: 18 }}>-&gt;</span>
           </Card>
         ))}
       </div>
     </div>
   );
 
-  // HISTORIAL
-  if (vista === "historial") return (
-    <div>
-      <PageHeader title="Mi Historial" subtitle="Servicios realizados" onBack={() => setVista("menu")} />
-      <div style={{ maxWidth: 600 }}>
-        {[
-          { id: "#1042", equipo: "Compresor Industrial",  tecnico: "Carlos Mendoza", estado: "COMPLETADO", fecha: "Hoy, 09:15" },
-          { id: "#1041", equipo: "Montacargas Electrico", tecnico: "Diego Ruiz",     estado: "EN PROCESO", fecha: "Hoy, 08:00" },
-          { id: "#1040", equipo: "Banda Transportadora",  tecnico: "Carlos Mendoza", estado: "COMPLETADO", fecha: "Ayer, 15:30" },
-        ].map((h, i) => (
-          <Card key={i} style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                <div style={{
-                  width: 38, height: 38, borderRadius: 10,
-                  background: C.dark + "08", border: "1px solid " + C.border,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontWeight: 800, fontSize: 11, color: C.muted
-                }}>{h.id}</div>
-                <div>
-                  <div style={{ fontWeight: 700 }}>{h.equipo}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{h.tecnico} - {h.fecha}</div>
-                </div>
-              </div>
-              <Badge color={h.estado === "COMPLETADO" ? C.success : C.warning}>{h.estado}</Badge>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-
-  // MENU SERVICIOS
+  // ---- VISTA LISTA PRINCIPAL ----
   return (
     <div>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <PageHeader title="Servicio Tecnico" subtitle="Gestion de inspecciones y ordenes" onBack={onBack} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14, maxWidth: 700 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Gestion de Personal</h2>
+          <p style={{ margin: 0, fontSize: 13, color: C.muted }}>
+            {listaFiltrada.length} de {lista.length} colaboradores
+          </p>
+        </div>
+        <Btn onClick={() => setVista("roles")}>+ NUEVO USUARIO</Btn>
+      </div>
+
+      {/* Filtros */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
         {[
-          { icon: "nuevo", label: "Nuevo Servicio",  desc: "Iniciar inspeccion",   action: () => setVista("equipos") },
-          { icon: "hist", label: "Mi Historial",    desc: "Servicios realizados", action: () => setVista("historial") },
-          { icon: "pdf", label: "Generar PDF",     desc: "Exportar reporte",     action: () => setToast({ msg: "PDF proximamente", type: "warning" }) },
-        ].map((item, i) => (
-          <Card key={i} onClick={item.action} style={{ textAlign: "center", padding: 28 }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: 16, marginBottom: 12,
-              background: "linear-gradient(135deg, #00B4D818, #06D6A012)",
-              border: "1px solid #00B4D830",
-              display: "flex", alignItems: "center", justifyContent: "center"
-            }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "#00B4D8", letterSpacing: 0.5 }}>
-                {(item.icon || "").slice(0,3).toUpperCase()}
-              </div>
-            </div>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>{item.label}</div>
-            <div style={{ fontSize: 12, color: C.muted }}>{item.desc}</div>
-          </Card>
+          { value: "", label: "Todos" },
+          { value: "admin", label: "Admin" },
+          { value: "tecnico", label: "Tecnicos" },
+          { value: "empleado", label: "Empleados" },
+        ].map(f => (
+          <div key={f.value} onClick={() => setFiltroRol(f.value)} style={{
+            padding: "6px 16px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700,
+            background: filtroRol === f.value ? C.accent : C.bg,
+            color: filtroRol === f.value ? "#fff" : C.muted,
+            border: `1px solid ${filtroRol === f.value ? C.accent : C.border}`
+          }}>{f.label}</div>
+        ))}
+        <div style={{ width: 1, background: C.border, margin: "0 4px" }} />
+        {[
+          { value: "", label: "Activos e inactivos" },
+          { value: "activo", label: "Solo activos" },
+          { value: "inactivo", label: "Solo inactivos" },
+        ].map(f => (
+          <div key={f.value} onClick={() => setFiltroEstado(f.value)} style={{
+            padding: "6px 16px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700,
+            background: filtroEstado === f.value ? C.dark : C.bg,
+            color: filtroEstado === f.value ? "#fff" : C.muted,
+            border: `1px solid ${filtroEstado === f.value ? C.dark : C.border}`
+          }}>{f.label}</div>
         ))}
       </div>
+
+      {/* Grid de empleados */}
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40, color: C.muted }}>Cargando...</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+          {listaFiltrada.map((p, i) => (
+            <Card key={i}
+              onClick={() => { setEmpSel(p); setVista("detalle"); }}
+              style={{
+                cursor: "pointer", opacity: p.activo === false ? 0.6 : 1,
+                borderLeft: `4px solid ${rolColor[p.rol] || C.border}`,
+                transition: "transform 0.15s, box-shadow 0.15s"
+              }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
+                  background: (rolColor[p.rol] || C.accent) + "20",
+                  border: `2px solid ${rolColor[p.rol] || C.accent}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 14, fontWeight: 900, color: rolColor[p.rol] || C.accent
+                }}>
+                  {p.nombre?.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{p.nombre}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{p.id_interno}</div>
+                  {p.empresa && <div style={{ fontSize: 11, color: C.muted }}>{p.empresa}</div>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                  <span style={{
+                    padding: "3px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+                    background: (rolColor[p.rol] || C.accent) + "20",
+                    color: rolColor[p.rol] || C.accent
+                  }}>{rolLabel[p.rol] || p.rol?.toUpperCase()}</span>
+                  <span style={{
+                    padding: "2px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+                    background: p.activo !== false ? "#06D6A015" : "#EF444415",
+                    color: p.activo !== false ? "#06D6A0" : "#EF4444"
+                  }}>{p.activo !== false ? "ACTIVO" : "INACTIVO"}</span>
+                </div>
+              </div>
+              {(p.salario_base > 0 || p.tasa_extra > 0) && (
+                <div style={{
+                  marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`,
+                  display: "flex", justifyContent: "space-between"
+                }}>
+                  {p.salario_base > 0 && (
+                    <div>
+                      <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>SALARIO</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>${Number(p.salario_base).toLocaleString()}</div>
+                    </div>
+                  )}
+                  {p.tasa_extra > 0 && (
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>H. EXTRA</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>${Number(p.tasa_extra).toLocaleString()}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
-// ============================================================
-// MODULO HORARIOS
-// ============================================================
-// ============================================================
-// MODULO CONTROL DE HORARIOS - Reemplazar componente Horarios
-// en App.js (buscar "const Horarios" y reemplazar hasta el );
-// ============================================================
 
-
-// Componente Alert reutilizable
 const Alert = ({ tipo, texto, onClose }) => (
   <div style={{
     padding: "12px 16px", borderRadius: 10, marginBottom: 16,
     background: tipo === "ok" ? "#06D6A015" : "#EF444415",
     border: `1px solid ${tipo === "ok" ? "#06D6A040" : "#EF444440"}`,
-    display: "flex", alignItems: "center", justifyContent: "space-between"
+    display: "flex", justifyContent: "space-between", alignItems: "center"
   }}>
-    <span style={{ fontSize: 13, fontWeight: 600, color: tipo === "ok" ? "#06D6A0" : "#EF4444" }}>
-      {texto}
-    </span>
-    {onClose && (
-      <span onClick={onClose} style={{ cursor: "pointer", fontSize: 16, color: "#8892A4", marginLeft: 12 }}>x</span>
-    )}
+    <span style={{ fontSize: 13, color: tipo === "ok" ? "#06D6A0" : "#EF4444", fontWeight: 600 }}>{texto}</span>
+    <span onClick={onClose} style={{ cursor: "pointer", color: "#6B7A8D", fontSize: 16, marginLeft: 12 }}>x</span>
   </div>
 );
+
+const Servicios = ({ onBack, user }) => {
+  const [msg, setMsg] = useState(null);
+  return (
+    <div>
+      <PageHeader title="Servicios" subtitle="Gestion de servicios" onBack={onBack} />
+      {msg && <Alert tipo={msg.tipo} texto={msg.texto} onClose={() => setMsg(null)} />}
+      <Card><div style={{ color: C.muted, textAlign: "center", padding: 40 }}>Modulo en construccion</div></Card>
+    </div>
+  );
+};
+
+const Vehiculos = ({ onBack }) => {
+  const [msg, setMsg] = useState(null);
+  const [lista, setLista] = useState([]);
+  useEffect(() => {
+    fetch(API_URL + "/vehiculos").then(r=>r.json()).then(setLista).catch(()=>{});
+  }, []);
+  const rolColor = { camion: C.accent, van: C.success, moto: C.warning };
+  return (
+    <div>
+      <PageHeader title="Vehiculos" subtitle="Flota registrada" onBack={onBack} />
+      {msg && <Alert tipo={msg.tipo} texto={msg.texto} onClose={() => setMsg(null)} />}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px,1fr))", gap: 14 }}>
+        {lista.map((v,i) => (
+          <Card key={i} style={{ borderLeft: `4px solid ${C.accent}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10, background: C.accent+"20",
+                border: `2px solid ${C.accent}`, display: "flex", alignItems: "center",
+                justifyContent: "center", fontWeight: 800, fontSize: 11, color: C.accent
+              }}>{v.placa?.slice(0,3)}</div>
+              <div>
+                <div style={{ fontWeight: 700 }}>{v.placa}</div>
+                <div style={{ fontSize: 12, color: C.muted }}>{v.modelo} {v.anio ? `(${v.anio})` : ""}</div>
+                {v.tipo && <div style={{ fontSize: 11, color: C.accent, fontWeight: 600 }}>{v.tipo?.toUpperCase()}</div>}
+              </div>
+            </div>
+          </Card>
+        ))}
+        {lista.length === 0 && <div style={{ color: C.muted, padding: 20 }}>Sin vehiculos registrados</div>}
+      </div>
+    </div>
+  );
+};
+
+const Referencias = ({ onBack }) => {
+  const [msg, setMsg] = useState(null);
+  return (
+    <div>
+      <PageHeader title="Referencias" subtitle="Clientes y ubicaciones" onBack={onBack} />
+      {msg && <Alert tipo={msg.tipo} texto={msg.texto} onClose={() => setMsg(null)} />}
+      <Card><div style={{ color: C.muted, textAlign: "center", padding: 40 }}>Modulo en construccion</div></Card>
+    </div>
+  );
+};
+
 
 const Horarios = ({ onBack, user }) => {
   const [vista, setVista] = useState("menu");
@@ -1253,8 +919,8 @@ const Horarios = ({ onBack, user }) => {
   const [rutasHoy, setRutasHoy] = useState([]);
 
   useEffect(() => {
-    fetch(`${API_URL}/personal`).then(r=>r.json()).then(setPersonal).catch(()=>{});
-    fetch(`${API_URL}/vehiculos`).then(r=>r.json()).then(setVehiculos).catch(()=>{});
+    fetch(`${API_URL}/personal`).then(r=>r.json()).then(d => setPersonal(Array.isArray(d) ? d : [])).catch(()=>{});
+    fetch(`${API_URL}/vehiculos`).then(r=>r.json()).then(d => setVehiculos(Array.isArray(d) ? d : [])).catch(()=>{});
     fetch(`${API_URL}/novedades-tipo`).then(r=>r.json()).then(setNovedadesTipo).catch(()=>{});
     // Cargar rutas de hoy
     const hoy = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];

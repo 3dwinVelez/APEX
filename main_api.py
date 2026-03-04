@@ -133,11 +133,27 @@ def get_personal():
     try:
         conn = get_conn()
         cur = conn.cursor()
-        cur.execute("SELECT nombre, rol, salario_base, id_interno, empresa FROM usuarios ORDER BY nombre")
+        cur.execute("""
+            SELECT id, nombre, rol,
+                   COALESCE(salario_base, 0),
+                   COALESCE(id_interno, ''),
+                   COALESCE(empresa, ''),
+                   COALESCE(documento, ''),
+                   COALESCE(tasa_extra, 0),
+                   COALESCE(username, ''),
+                   COALESCE(activo, TRUE)
+            FROM usuarios ORDER BY nombre
+        """)
         rows = cur.fetchall()
         conn.close()
         return [
-            {"nombre": r[0], "rol": r[1], "salario_base": r[2], "id_interno": r[3], "empresa": r[4]}
+            {
+                "id": r[0], "nombre": r[1], "rol": r[2],
+                "salario_base": float(r[3]) if r[3] else 0,
+                "id_interno": r[4], "empresa": r[5],
+                "documento": r[6], "tasa_extra": float(r[7]) if r[7] else 0,
+                "username": r[8], "activo": bool(r[9])
+            }
             for r in rows
         ]
     except Exception as e:
@@ -451,6 +467,27 @@ async def crear_tablas():
         """)
 
         # Tabla registro horas extra
+        # Columnas adicionales en usuarios
+        for col_sql in [
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS documento TEXT",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tasa_extra NUMERIC DEFAULT 0",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
+        ]:
+            try: cur.execute(col_sql); conn.commit()
+            except: pass
+
+        # Columnas adicionales en usuarios
+        for col_sql in [
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS documento TEXT",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tasa_extra NUMERIC DEFAULT 0",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
+        ]:
+            try:
+                cur.execute(col_sql)
+                conn.commit()
+            except:
+                pass
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS horas_extra_registro (
                 id SERIAL PRIMARY KEY,
@@ -896,6 +933,40 @@ def asistencia_detalle(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+@app.put("/personal/{uid}")
+def editar_personal(uid: int, p: PersonalCreate):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE usuarios SET
+                nombre = %s, documento = %s, empresa = %s,
+                salario_base = %s, tasa_extra = %s, rol = %s
+            WHERE id = %s
+        """, (p.nombre, p.doc, p.empresa,
+              float(p.salario or 0), float(p.extra or 0), p.rol, uid))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/personal/{uid}/estado")
+def toggle_personal(uid: int, activo: bool):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE
+        """)
+        cur.execute("UPDATE usuarios SET activo = %s WHERE id = %s", (activo, uid))
+        conn.commit()
+        conn.close()
+        return {"ok": True, "activo": activo}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
