@@ -525,6 +525,44 @@ class HorariosModule:
         if not self.verificar_sesion():
             self.volver_callback(self.sesion.get("usuario", "Administrador"))
             return
+    
+        # ===== DEBUG =====
+        print("\n" + "="*50)
+        print("🔍 DEBUG DE FILTROS - INICIO")
+        print("="*50)
+        print(f"📅 f_fecha recibido: {f_fecha}")
+        print(f"🚗 f_placa recibido: {f_placa}")
+        print(f"👤 f_empleado recibido: {f_empleado}")
+        print(f"📋 self.sesion (completo): {self.sesion}")
+        print(f"👤 Usuario en sesión: {self.sesion.get('usuario', 'NO ENCONTRADO')}")
+        print(f"👤 Nombre en sesión: {self.sesion.get('nombre', 'NO ENCONTRADO')}")
+        # =================
+        
+        self.page.clean()
+        vals = self.get_responsive_values()
+        
+        fecha_consulta = f_fecha if f_fecha else datetime.now().strftime("%Y-%m-%d")
+        
+        # ===== DEBUG FILTROS DB =====
+        print(f"\n📅 fecha_consulta: {fecha_consulta}")
+        print(f"🔍 f_placa original: '{f_placa}'")
+        print(f"🔍 f_empleado original: '{f_empleado}'")
+        # ============================
+        
+        p_sql = None if f_placa == "Todos" or not f_placa else f_placa
+        e_sql = None if f_empleado == "Todos" or not f_empleado else f_empleado
+        
+        print(f"\n📊 Para DB:")
+        print(f"   fecha: {fecha_consulta}")
+        print(f"   placa: {p_sql}")
+        print(f"   empleado: {e_sql}")
+        
+        rutas_dia = self.db.obtener_rutas_filtradas(fecha=fecha_consulta, placa=p_sql, empleado=e_sql)
+        
+        print(f"\n📊 Rutas encontradas: {len(rutas_dia)}")
+        for r in rutas_dia:
+            print(f"   • {r['placa']} - {r['equipo']}")
+        print("="*50 + "\n")
             
         self.page.clean()
         vals = self.get_responsive_values()
