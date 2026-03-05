@@ -88,19 +88,6 @@ class VehiculoCreate(BaseModel):
     estado: Optional[str] = "activo"
     observaciones: Optional[str] = ""
 
-class ReferenciaCreate(BaseModel):
-    nombre: str
-    descripcion: Optional[str] = ""
-    costo: Optional[float] = 0
-    piezas_json: Optional[str] = "[]"
-
-class OrdenCreate(BaseModel):
-    tecnico_id: int
-    referencia_id: int
-    tiempo_total: Optional[float] = 0
-    novedades_json: Optional[str] = "[]"
-
-class PlaneacionCreate(BaseModel):
     fecha: str
     placa: str
     empleados: list
@@ -165,6 +152,18 @@ def get_personal():
     try:
         conn = get_conn()
         cur = conn.cursor()
+        # Ensure columns exist first
+        for col_sql in [
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salario_base NUMERIC DEFAULT 0",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS id_interno TEXT DEFAULT ''",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa TEXT DEFAULT ''",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS documento TEXT DEFAULT ''",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tasa_extra NUMERIC DEFAULT 0",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS username TEXT",
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
+        ]:
+            try: cur.execute(col_sql); conn.commit()
+            except: conn.rollback()
         cur.execute("""
             SELECT id, nombre, rol,
                    COALESCE(salario_base, 0),
@@ -215,9 +214,28 @@ def get_vehiculos():
     try:
         conn = get_conn()
         cur = conn.cursor()
+        for col_sql in [
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS marca TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS anio INTEGER",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS color TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS cilindraje TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS capacidad_carga TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS combustible TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS kilometraje INTEGER DEFAULT 0",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_serie TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_motor TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS soat_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tecnomecanica_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS seguro_vence TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario TEXT DEFAULT ''",
+            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS observaciones TEXT DEFAULT ''",
+        ]:
+            try: cur.execute(col_sql); conn.commit()
+            except: conn.rollback()
         cur.execute("""
             SELECT id, placa, modelo, estado,
-                   COALESCE(tipo,''), COALESCE(marca,''), anio,
+                   COALESCE(tipo,''), COALESCE(marca,''), COALESCE(anio,0),
                    COALESCE(color,''), COALESCE(cilindraje,''),
                    COALESCE(capacidad_carga,''), COALESCE(combustible,''),
                    COALESCE(kilometraje,0), COALESCE(num_serie,''),
@@ -245,10 +263,20 @@ def crear_vehiculo(v: VehiculoCreate):
     try:
         conn = get_conn()
         cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO vehiculos (placa, modelo, estado) VALUES (%s, %s, \'disponible\')",
-            (v.placa.upper(), v.modelo)
-        )
+        cur.execute("""
+            INSERT INTO vehiculos (
+                placa, modelo, estado, tipo, marca, anio, color,
+                cilindraje, capacidad_carga, combustible, kilometraje,
+                num_serie, num_motor, soat_vence, tecnomecanica_vence,
+                seguro_vence, propietario, observaciones
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            v.placa.upper(), v.modelo, v.estado or "activo",
+            v.tipo, v.marca, v.anio, v.color,
+            v.cilindraje, v.capacidad_carga, v.combustible, v.kilometraje or 0,
+            v.num_serie, v.num_motor, v.soat_vence, v.tecnomecanica_vence,
+            v.seguro_vence, v.propietario, v.observaciones
+        ))
         conn.commit()
         conn.close()
         return {"ok": True, "placa": v.placa.upper()}
@@ -267,85 +295,6 @@ def actualizar_estado_vehiculo(placa: str, estado: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# ============================================================
-# REFERENCIAS
-# ============================================================
-@app.get("/referencias")
-def get_referencias():
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT id, nombre_referencia, descripcion, costo_mano_obra, piezas_json FROM maestro_referencias ORDER BY nombre_referencia")
-        rows = cur.fetchall()
-        conn.close()
-        return [
-            {"id": r[0], "nombre_referencia": r[1], "descripcion": r[2], "costo_mano_obra": r[3], "piezas_json": r[4]}
-            for r in rows
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/referencias")
-def crear_referencia(r: ReferenciaCreate):
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO maestro_referencias (nombre_referencia, descripcion, costo_mano_obra, piezas_json)
-            VALUES (%s, %s, %s, %s)
-        """, (r.nombre, r.descripcion, r.costo, r.piezas_json))
-        conn.commit()
-        conn.close()
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-# ============================================================
-# ORDENES DE SERVICIO
-# ============================================================
-@app.get("/ordenes")
-def get_ordenes():
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT o.id, u.nombre, m.nombre_referencia, o.fecha_creacion,
-                   o.estado, o.tiempo_total, o.novedades_json
-            FROM ordenes_servicio o
-            LEFT JOIN usuarios u ON o.tecnico_id = u.id
-            LEFT JOIN maestro_referencias m ON o.referencia_id = m.id
-            ORDER BY o.id DESC LIMIT 50
-        """)
-        rows = cur.fetchall()
-        conn.close()
-        return [
-            {"id": r[0], "tecnico": r[1], "equipo": r[2], "fecha": str(r[3]),
-             "estado": r[4], "tiempo": r[5], "novedades": r[6]}
-            for r in rows
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/ordenes")
-def crear_orden(o: OrdenCreate):
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cur.execute("""
-            INSERT INTO ordenes_servicio
-            (tecnico_id, referencia_id, fecha_creacion, estado, tiempo_total, novedades_json)
-            VALUES (%s, %s, %s, \'cerrado\', %s, %s)
-            RETURNING id
-        """, (o.tecnico_id, o.referencia_id, fecha, o.tiempo_total, o.novedades_json))
-        orden_id = cur.fetchone()[0]
-        conn.commit()
-        conn.close()
-        return {"ok": True, "orden_id": orden_id}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-# ============================================================
 # HORARIOS - PLANEACION
 # ============================================================
 @app.get("/rutas")
@@ -421,21 +370,27 @@ def get_stats():
         vehiculos_ruta = cur.fetchone()[0]
 
         cur.execute("""
-            SELECT COUNT(*) FROM ordenes_servicio
-            WHERE novedades_json != \'[]\'
-            AND fecha_creacion::date = %s::date
+            SELECT COUNT(*) FROM novedades_servicio ns
+            JOIN ordenes_servicio os ON ns.orden_id = os.id
+            WHERE os.fecha_creacion::date = %s::date
         """, (fecha_hoy,))
         novedades_hoy = cur.fetchone()[0]
 
+        cur.execute("SELECT COUNT(*) FROM vehiculos WHERE estado = 'activo'")
+        vehiculos_activos = cur.fetchone()[0]
+
         conn.close()
         return {
-            "servicios_hoy": servicios_hoy,
-            "personal_activo": total_personal,
-            "vehiculos_en_ruta": vehiculos_ruta,
-            "novedades_hoy": novedades_hoy,
+            "ordenes_hoy":        servicios_hoy,
+            "personal_activo":    total_personal,
+            "vehiculos_activos":  vehiculos_activos,
+            "novedades":          novedades_hoy,
+            # legacy keys
+            "servicios_hoy":      servicios_hoy,
+            "vehiculos_en_ruta":  vehiculos_ruta,
         }
     except Exception as e:
-        return {"servicios_hoy": 0, "personal_activo": 0, "vehiculos_en_ruta": 0, "novedades_hoy": 0}
+        return {"ordenes_hoy": 0, "personal_activo": 0, "vehiculos_activos": 0, "novedades": 0}
 
 
 # ============================================================
@@ -455,6 +410,48 @@ async def crear_tablas():
     try:
         conn = get_conn()
         cur = conn.cursor()
+
+        # Tablas base
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id SERIAL PRIMARY KEY,
+                nombre TEXT NOT NULL,
+                rol TEXT DEFAULT 'empleado',
+                username TEXT UNIQUE,
+                password TEXT,
+                empresa TEXT DEFAULT '',
+                salario_base NUMERIC DEFAULT 0,
+                tasa_extra NUMERIC DEFAULT 0,
+                id_interno TEXT DEFAULT '',
+                documento TEXT DEFAULT '',
+                activo BOOLEAN DEFAULT TRUE
+            )
+        """); conn.commit()
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vehiculos (
+                id SERIAL PRIMARY KEY,
+                placa TEXT UNIQUE NOT NULL,
+                modelo TEXT DEFAULT '',
+                estado TEXT DEFAULT 'activo'
+            )
+        """); conn.commit()
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS asistencia (
+                id SERIAL PRIMARY KEY,
+                usuario TEXT,
+                tipo_marca TEXT,
+                hora TEXT,
+                fecha DATE DEFAULT CURRENT_DATE,
+                vehiculo_placa TEXT DEFAULT '',
+                latitud NUMERIC,
+                longitud NUMERIC,
+                es_extra BOOLEAN DEFAULT FALSE,
+                minutos_extra INTEGER DEFAULT 0,
+                ruta_id INTEGER
+            )
+        """); conn.commit()
 
         # Tabla maestro de tipos de novedad
         # Columnas adicionales vehiculos
@@ -1056,6 +1053,528 @@ def toggle_personal(uid: int, activo: bool):
         conn.commit()
         conn.close()
         return {"ok": True, "activo": activo}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ==================== GPS TRACKING ====================
+@app.post("/gps/ping")
+def gps_ping(data: dict):
+    """Recibe posicion GPS de un usuario activo cada 5 min"""
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS gps_tracking (
+                id SERIAL PRIMARY KEY,
+                username TEXT NOT NULL,
+                nombre TEXT,
+                latitud NUMERIC,
+                longitud NUMERIC,
+                precision_m NUMERIC,
+                timestamp TIMESTAMPTZ DEFAULT NOW(),
+                fecha DATE DEFAULT CURRENT_DATE
+            )
+        """)
+        # Upsert: una sola fila por usuario por dia (actualiza)
+        cur.execute("""
+            INSERT INTO gps_tracking (username, nombre, latitud, longitud, precision_m, timestamp, fecha)
+            VALUES (%s, %s, %s, %s, %s, NOW(), CURRENT_DATE)
+            ON CONFLICT DO NOTHING
+        """, (data.get("username"), data.get("nombre"),
+              data.get("lat"), data.get("lng"), data.get("precision")))
+        # Always update latest position
+        cur.execute("""
+            UPDATE gps_tracking
+            SET latitud=%s, longitud=%s, precision_m=%s, timestamp=NOW()
+            WHERE username=%s AND fecha=CURRENT_DATE
+        """, (data.get("lat"), data.get("lng"),
+              data.get("precision"), data.get("username")))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/gps/activos")
+def gps_activos():
+    """Retorna ultima posicion de cada usuario activo hoy"""
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS gps_tracking (
+                id SERIAL PRIMARY KEY,
+                username TEXT NOT NULL,
+                nombre TEXT,
+                latitud NUMERIC,
+                longitud NUMERIC,
+                precision_m NUMERIC,
+                timestamp TIMESTAMPTZ DEFAULT NOW(),
+                fecha DATE DEFAULT CURRENT_DATE
+            )
+        """)
+        cur.execute("""
+            SELECT g.username, g.nombre, g.latitud, g.longitud,
+                   g.precision_m, g.timestamp,
+                   u.rol,
+                   COALESCE(
+                     (SELECT tipo_marca FROM asistencia
+                      WHERE usuario = g.nombre AND fecha = CURRENT_DATE
+                      ORDER BY id DESC LIMIT 1), 'SIN MARCAR'
+                   ) as ultima_marca,
+                   COALESCE(
+                     (SELECT hora FROM asistencia
+                      WHERE usuario = g.nombre AND fecha = CURRENT_DATE
+                      ORDER BY id DESC LIMIT 1), ''
+                   ) as ultima_hora
+            FROM gps_tracking g
+            LEFT JOIN usuarios u ON u.username = g.username
+            WHERE g.fecha = CURRENT_DATE
+            ORDER BY g.timestamp DESC
+        """)
+        rows = cur.fetchall()
+        conn.close()
+        return [{
+            "username": r[0], "nombre": r[1],
+            "lat": float(r[2]) if r[2] else None,
+            "lng": float(r[3]) if r[3] else None,
+            "precision": float(r[4]) if r[4] else None,
+            "timestamp": r[5].isoformat() if r[5] else None,
+            "rol": r[6], "ultima_marca": r[7], "ultima_hora": r[8]
+        } for r in rows if r[2] and r[3]]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/gps/recorrido/{nombre}")
+def gps_recorrido(nombre: str, fecha: str = None):
+    """Retorna todas las marcaciones con GPS de un operario en un dia"""
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        fecha_q = fecha or "CURRENT_DATE"
+        cur.execute(f"""
+            SELECT tipo_marca, hora, latitud, longitud, es_extra, minutos_extra, vehiculo_placa
+            FROM asistencia
+            WHERE usuario = %s
+              AND latitud IS NOT NULL
+              AND longitud IS NOT NULL
+              AND fecha::text = COALESCE(%s, CURRENT_DATE::text)
+            ORDER BY id ASC
+        """, (nombre, fecha))
+        rows = cur.fetchall()
+        conn.close()
+        return [{
+            "tipo": r[0], "hora": r[1],
+            "lat": float(r[2]), "lng": float(r[3]),
+            "es_extra": r[4], "minutos_extra": r[5],
+            "placa": r[6]
+        } for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/gps/historico")
+def gps_historico(fecha: str = None, nombre: str = None, placa: str = None, ruta_id: str = None):
+    """Retorna recorridos historicos filtrados por fecha/operario/placa/ruta"""
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+
+        conditions = ["latitud IS NOT NULL", "longitud IS NOT NULL"]
+        params = []
+
+        if fecha:
+            conditions.append("fecha::text = %s")
+            params.append(fecha)
+        else:
+            conditions.append("fecha = CURRENT_DATE")
+
+        if nombre:
+            conditions.append("usuario ILIKE %s")
+            params.append(f"%{nombre}%")
+
+        if placa:
+            conditions.append("vehiculo_placa ILIKE %s")
+            params.append(f"%{placa}%")
+
+        if ruta_id:
+            conditions.append("ruta_id = %s")
+            params.append(ruta_id)
+
+        where = " AND ".join(conditions)
+        cur.execute(f"""
+            SELECT usuario, tipo_marca, hora, latitud, longitud,
+                   es_extra, minutos_extra, vehiculo_placa, fecha, ruta_id
+            FROM asistencia
+            WHERE {where}
+            ORDER BY usuario, id ASC
+        """, params)
+        rows = cur.fetchall()
+        conn.close()
+
+        # Group by usuario
+        from collections import defaultdict
+        grupos = defaultdict(list)
+        for r in rows:
+            grupos[r[0]].append({
+                "tipo": r[1], "hora": str(r[2]),
+                "lat": float(r[3]), "lng": float(r[4]),
+                "es_extra": r[5], "minutos_extra": r[6],
+                "placa": r[7], "fecha": str(r[8]), "ruta_id": r[9]
+            })
+
+        return [{"nombre": k, "marcaciones": v} for k, v in grupos.items()]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ==================== MODELOS SERVICIOS ====================
+class PiezaItem(BaseModel):
+    nombre: str
+    cantidad: int = 1
+    unidad: Optional[str] = "und"
+    descripcion: Optional[str] = ""
+
+class ReferenciaCreate(BaseModel):
+    codigo: str
+    nombre: str
+    categoria: Optional[str] = ""
+    descripcion: Optional[str] = ""
+    tiempo_estimado_min: Optional[int] = 60
+    marca: Optional[str] = ""
+    modelo: Optional[str] = ""
+    activo: Optional[bool] = True
+    piezas: Optional[list] = []
+
+class OrdenCreate(BaseModel):
+    referencia_id: int
+    tecnico_id: Optional[int] = None
+    tipo_servicio: str  # montaje / desmontaje / ambos
+    cliente_nombre: str
+    cliente_direccion: str
+    cliente_telefono: Optional[str] = ""
+    num_factura: Optional[str] = ""
+    observaciones: Optional[str] = ""
+    fecha_programada: Optional[str] = ""
+
+class InspeccionPieza(BaseModel):
+    orden_id: int
+    pieza_id: int
+    nombre_pieza: str
+    estado: str  # ok / averiada / faltante
+    novedad_descripcion: Optional[str] = ""
+    accion_solicitada: Optional[str] = "ninguna"  # ninguna/cambio/garantia
+
+class NovedadServicio(BaseModel):
+    orden_id: int
+    descripcion: str
+    tipo: str  # averia/faltante/otro
+    accion: str  # cambio/garantia/informativo
+    foto_url: Optional[str] = ""
+
+# ==================== STARTUP TABLAS SERVICIOS ====================
+def crear_tablas_servicios(cur, conn):
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS referencias (
+            id SERIAL PRIMARY KEY,
+            codigo TEXT UNIQUE NOT NULL,
+            nombre TEXT NOT NULL,
+            categoria TEXT DEFAULT '',
+            descripcion TEXT DEFAULT '',
+            tiempo_estimado_min INTEGER DEFAULT 60,
+            marca TEXT DEFAULT '',
+            modelo TEXT DEFAULT '',
+            foto_url TEXT DEFAULT '',
+            activo BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """); conn.commit()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS referencia_piezas (
+            id SERIAL PRIMARY KEY,
+            referencia_id INTEGER REFERENCES referencias(id) ON DELETE CASCADE,
+            nombre TEXT NOT NULL,
+            cantidad INTEGER DEFAULT 1,
+            unidad TEXT DEFAULT 'und',
+            descripcion TEXT DEFAULT '',
+            orden_display INTEGER DEFAULT 0
+        )
+    """); conn.commit()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ordenes_servicio (
+            id SERIAL PRIMARY KEY,
+            consecutivo TEXT UNIQUE,
+            referencia_id INTEGER REFERENCES referencias(id),
+            tecnico_id INTEGER,
+            tipo_servicio TEXT DEFAULT 'montaje',
+            estado TEXT DEFAULT 'pendiente',
+            cliente_nombre TEXT DEFAULT '',
+            cliente_direccion TEXT DEFAULT '',
+            cliente_telefono TEXT DEFAULT '',
+            num_factura TEXT DEFAULT '',
+            observaciones TEXT DEFAULT '',
+            fecha_programada TEXT DEFAULT '',
+            fecha_creacion TIMESTAMPTZ DEFAULT NOW(),
+            fecha_inicio TIMESTAMPTZ,
+            fecha_cierre TIMESTAMPTZ,
+            duracion_min INTEGER,
+            lat_inicio NUMERIC,
+            lng_inicio NUMERIC,
+            foto_fachada_url TEXT DEFAULT '',
+            foto_final_url TEXT DEFAULT '',
+            firma_cliente_url TEXT DEFAULT '',
+            creado_por TEXT DEFAULT ''
+        )
+    """); conn.commit()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS inspeccion_piezas (
+            id SERIAL PRIMARY KEY,
+            orden_id INTEGER REFERENCES ordenes_servicio(id) ON DELETE CASCADE,
+            pieza_id INTEGER,
+            nombre_pieza TEXT,
+            estado TEXT DEFAULT 'ok',
+            foto_url TEXT DEFAULT '',
+            novedad_descripcion TEXT DEFAULT '',
+            accion_solicitada TEXT DEFAULT 'ninguna',
+            timestamp TIMESTAMPTZ DEFAULT NOW()
+        )
+    """); conn.commit()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS novedades_servicio (
+            id SERIAL PRIMARY KEY,
+            orden_id INTEGER REFERENCES ordenes_servicio(id) ON DELETE CASCADE,
+            descripcion TEXT,
+            tipo TEXT DEFAULT 'otro',
+            accion TEXT DEFAULT 'informativo',
+            foto_url TEXT DEFAULT '',
+            timestamp TIMESTAMPTZ DEFAULT NOW()
+        )
+    """); conn.commit()
+
+# ==================== ENDPOINTS REFERENCIAS ====================
+@app.get("/referencias")
+def get_referencias(categoria: str = None, activo: bool = None):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        crear_tablas_servicios(cur, conn)
+        conditions = []
+        params = []
+        if categoria:
+            conditions.append("categoria = %s"); params.append(categoria)
+        if activo is not None:
+            conditions.append("activo = %s"); params.append(activo)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        cur.execute(f"SELECT id,codigo,nombre,categoria,descripcion,tiempo_estimado_min,marca,modelo,foto_url,activo FROM referencias {where} ORDER BY categoria,nombre", params)
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            cur.execute("SELECT id,nombre,cantidad,unidad,descripcion,orden_display FROM referencia_piezas WHERE referencia_id=%s ORDER BY orden_display,id", (r[0],))
+            piezas = [{"id":p[0],"nombre":p[1],"cantidad":p[2],"unidad":p[3],"descripcion":p[4],"orden":p[5]} for p in cur.fetchall()]
+            result.append({"id":r[0],"codigo":r[1],"nombre":r[2],"categoria":r[3],"descripcion":r[4],"tiempo_estimado_min":r[5],"marca":r[6],"modelo":r[7],"foto_url":r[8],"activo":r[9],"piezas":piezas,"total_piezas":len(piezas)})
+        conn.close()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/referencias")
+def crear_referencia(r: ReferenciaCreate):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        crear_tablas_servicios(cur, conn)
+        cur.execute("""
+            INSERT INTO referencias (codigo,nombre,categoria,descripcion,tiempo_estimado_min,marca,modelo,activo)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+        """, (r.codigo.upper(),r.nombre,r.categoria,r.descripcion,r.tiempo_estimado_min,r.marca,r.modelo,r.activo))
+        ref_id = cur.fetchone()[0]
+        for i, p in enumerate(r.piezas or []):
+            cur.execute("""
+                INSERT INTO referencia_piezas (referencia_id,nombre,cantidad,unidad,descripcion,orden_display)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (ref_id, p.get("nombre",""), p.get("cantidad",1), p.get("unidad","und"), p.get("descripcion",""), i))
+        conn.commit(); conn.close()
+        return {"ok": True, "id": ref_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/referencias/{rid}")
+def editar_referencia(rid: int, r: ReferenciaCreate):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("""
+            UPDATE referencias SET codigo=%s,nombre=%s,categoria=%s,descripcion=%s,
+            tiempo_estimado_min=%s,marca=%s,modelo=%s,activo=%s WHERE id=%s
+        """, (r.codigo.upper(),r.nombre,r.categoria,r.descripcion,r.tiempo_estimado_min,r.marca,r.modelo,r.activo,rid))
+        cur.execute("DELETE FROM referencia_piezas WHERE referencia_id=%s", (rid,))
+        for i, p in enumerate(r.piezas or []):
+            cur.execute("""
+                INSERT INTO referencia_piezas (referencia_id,nombre,cantidad,unidad,descripcion,orden_display)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (rid, p.get("nombre",""), p.get("cantidad",1), p.get("unidad","und"), p.get("descripcion",""), i))
+        conn.commit(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ==================== ENDPOINTS ORDENES ====================
+@app.get("/ordenes")
+def get_ordenes(estado: str = None, tecnico_id: int = None):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        crear_tablas_servicios(cur, conn)
+        conditions = []
+        params = []
+        if estado:
+            conditions.append("o.estado = %s"); params.append(estado)
+        if tecnico_id:
+            conditions.append("o.tecnico_id = %s"); params.append(tecnico_id)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        cur.execute(f"""
+            SELECT o.id, o.consecutivo, o.tipo_servicio, o.estado,
+                   o.cliente_nombre, o.cliente_direccion, o.cliente_telefono,
+                   o.num_factura, o.fecha_creacion, o.fecha_inicio, o.fecha_cierre,
+                   o.duracion_min, o.lat_inicio, o.lng_inicio,
+                   o.foto_fachada_url, o.foto_final_url, o.firma_cliente_url,
+                   o.observaciones, o.fecha_programada, o.creado_por,
+                   r.id, r.codigo, r.nombre, r.categoria, r.tiempo_estimado_min,
+                   u.nombre as tecnico_nombre, o.tecnico_id, o.referencia_id
+            FROM ordenes_servicio o
+            LEFT JOIN referencias r ON r.id = o.referencia_id
+            LEFT JOIN usuarios u ON u.id = o.tecnico_id
+            {where} ORDER BY o.fecha_creacion DESC
+        """, params)
+        rows = cur.fetchall()
+        conn.close()
+        return [{
+            "id":r[0],"consecutivo":r[1],"tipo_servicio":r[2],"estado":r[3],
+            "cliente_nombre":r[4],"cliente_direccion":r[5],"cliente_telefono":r[6],
+            "num_factura":r[7],"fecha_creacion":str(r[8]) if r[8] else "",
+            "fecha_inicio":str(r[9]) if r[9] else "","fecha_cierre":str(r[10]) if r[10] else "",
+            "duracion_min":r[11],"lat_inicio":float(r[12]) if r[12] else None,
+            "lng_inicio":float(r[13]) if r[13] else None,
+            "foto_fachada_url":r[14],"foto_final_url":r[15],"firma_cliente_url":r[16],
+            "observaciones":r[17],"fecha_programada":r[18],"creado_por":r[19],
+            "referencia_id":r[20],"referencia_codigo":r[21],"referencia_nombre":r[22],
+            "referencia_categoria":r[23],"tiempo_estimado_min":r[24],
+            "tecnico_nombre":r[25],"tecnico_id":r[26]
+        } for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/ordenes")
+def crear_orden(o: OrdenCreate, creado_por: str = "admin"):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        crear_tablas_servicios(cur, conn)
+        cur.execute("SELECT COUNT(*)+1 FROM ordenes_servicio")
+        num = cur.fetchone()[0]
+        consecutivo = f"OS-{str(num).zfill(4)}"
+        cur.execute("""
+            INSERT INTO ordenes_servicio (consecutivo,referencia_id,tecnico_id,tipo_servicio,
+                cliente_nombre,cliente_direccion,cliente_telefono,num_factura,
+                observaciones,fecha_programada,creado_por)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+        """, (consecutivo,o.referencia_id,o.tecnico_id,o.tipo_servicio,
+              o.cliente_nombre,o.cliente_direccion,o.cliente_telefono,
+              o.num_factura,o.observaciones,o.fecha_programada,creado_por))
+        oid = cur.fetchone()[0]
+        conn.commit(); conn.close()
+        return {"ok": True, "id": oid, "consecutivo": consecutivo}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/ordenes/{oid}/iniciar")
+def iniciar_orden(oid: int, lat: float = None, lng: float = None):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("""
+            UPDATE ordenes_servicio SET estado='en_curso',
+            fecha_inicio=NOW(), lat_inicio=%s, lng_inicio=%s
+            WHERE id=%s
+        """, (lat, lng, oid))
+        conn.commit(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/ordenes/{oid}/cerrar")
+def cerrar_orden(oid: int):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("""
+            UPDATE ordenes_servicio SET estado='cerrada', fecha_cierre=NOW(),
+            duracion_min = EXTRACT(EPOCH FROM (NOW()-fecha_inicio))/60
+            WHERE id=%s
+        """, (oid,))
+        conn.commit(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/ordenes/{oid}/inspeccion")
+def guardar_inspeccion(oid: int, items: list):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("DELETE FROM inspeccion_piezas WHERE orden_id=%s", (oid,))
+        for item in items:
+            cur.execute("""
+                INSERT INTO inspeccion_piezas (orden_id,pieza_id,nombre_pieza,estado,novedad_descripcion,accion_solicitada)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (oid,item.get("pieza_id"),item.get("nombre_pieza"),item.get("estado","ok"),
+                  item.get("novedad_descripcion",""),item.get("accion_solicitada","ninguna")))
+        cur.execute("UPDATE ordenes_servicio SET estado='inspeccion' WHERE id=%s AND estado='en_curso'", (oid,))
+        conn.commit(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/ordenes/{oid}/detalle")
+def detalle_orden(oid: int):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("""
+            SELECT o.*, r.codigo, r.nombre, r.categoria, u.nombre as tecnico
+            FROM ordenes_servicio o
+            LEFT JOIN referencias r ON r.id=o.referencia_id
+            LEFT JOIN usuarios u ON u.id=o.tecnico_id
+            WHERE o.id=%s
+        """, (oid,))
+        o = cur.fetchone()
+        if not o: raise HTTPException(status_code=404, detail="Orden no encontrada")
+        cur.execute("SELECT * FROM inspeccion_piezas WHERE orden_id=%s ORDER BY id", (oid,))
+        inspeccion = cur.fetchall()
+        cur.execute("SELECT * FROM novedades_servicio WHERE orden_id=%s ORDER BY id", (oid,))
+        novedades = cur.fetchall()
+        conn.close()
+        return {
+            "orden": dict(zip([d[0] for d in cur.description], o)) if False else {
+                "id":o[0],"consecutivo":o[1],"estado":o[3],
+                "cliente_nombre":o[4],"cliente_direccion":o[5],"cliente_telefono":o[6],
+                "num_factura":o[7],"tipo_servicio":o[2],
+                "fecha_inicio":str(o[9]) if o[9] else "","fecha_cierre":str(o[10]) if o[10] else "",
+                "duracion_min":o[11],"lat_inicio":float(o[12]) if o[12] else None,
+                "lng_inicio":float(o[13]) if o[13] else None,
+                "observaciones":o[17],"tecnico":o[-1],
+                "referencia_codigo":o[-4],"referencia_nombre":o[-3],"referencia_categoria":o[-2]
+            },
+            "inspeccion": [{"id":i[0],"pieza_id":i[2],"nombre":i[3],"estado":i[4],"novedad":i[6],"accion":i[7]} for i in inspeccion],
+            "novedades": [{"id":n[0],"descripcion":n[2],"tipo":n[3],"accion":n[4],"timestamp":str(n[6])} for n in novedades]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/novedades_servicio")
+def crear_novedad(n: NovedadServicio):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO novedades_servicio (orden_id,descripcion,tipo,accion,foto_url)
+            VALUES (%s,%s,%s,%s,%s) RETURNING id
+        """, (n.orden_id,n.descripcion,n.tipo,n.accion,n.foto_url))
+        nid = cur.fetchone()[0]
+        conn.commit(); conn.close()
+        return {"ok": True, "id": nid}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
