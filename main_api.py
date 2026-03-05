@@ -23,15 +23,31 @@ app.add_middleware(
 # ============================================================
 # CONEXION A BASE DE DATOS (igual que tu db_manager.py)
 # ============================================================
+from psycopg2 import pool as pg_pool
+
+# Connection pool - reutiliza conexiones en vez de abrir una nueva por request
+_pool = None
+
+def get_pool():
+    global _pool
+    if _pool is None:
+        _pool = pg_pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=10,
+            host=os.getenv("DB_HOST"),
+            database=os.getenv("DB_NAME"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            port="6543",
+            connect_timeout=10
+        )
+    return _pool
+
 def get_conn():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"),
-        port="6543",
-        connect_timeout=10
-    )
+    return get_pool().getconn()
+
+def release_conn(conn):
+    get_pool().putconn(conn)
 
 # ============================================================
 # MODELOS PYDANTIC (validacion de datos)
@@ -110,7 +126,7 @@ def root():
 def health():
     try:
         conn = get_conn()
-        conn.close()
+        release_conn(conn)
         return {"status": "ok", "db": "conectada"}
     except Exception as e:
         return {"status": "error", "db": str(e)}
@@ -128,7 +144,7 @@ def login(req: LoginRequest):
             (req.username, req.password)
         )
         row = cur.fetchone()
-        conn.close()
+        release_conn(conn)
         if row:
             return {
                 "usuario": {
@@ -176,7 +192,7 @@ def get_personal():
             FROM usuarios ORDER BY nombre
         """)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return [
             {
                 "id": r[0], "nombre": r[1], "rol": r[2],
@@ -201,7 +217,7 @@ def crear_personal(p: PersonalCreate):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (p.nombre, p.user, p.pas, p.rol, p.doc, p.empresa, p.id_interno, p.costo, p.salario, p.extra))
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True, "id_interno": p.id_interno}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -245,7 +261,7 @@ def get_vehiculos():
             FROM vehiculos ORDER BY placa
         """)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return [{
             "id": r[0], "placa": r[1], "modelo": r[2], "estado": r[3],
             "tipo": r[4], "marca": r[5], "anio": r[6],
@@ -278,7 +294,7 @@ def crear_vehiculo(v: VehiculoCreate):
             v.seguro_vence, v.propietario, v.observaciones
         ))
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True, "placa": v.placa.upper()}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -290,7 +306,7 @@ def actualizar_estado_vehiculo(placa: str, estado: str):
         cur = conn.cursor()
         cur.execute("UPDATE vehiculos SET estado = %s WHERE placa = %s", (estado, placa.upper()))
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -314,7 +330,7 @@ def get_rutas(fecha: Optional[str] = None):
                 FROM planeacion_rutas WHERE fecha = %s ORDER BY id DESC
             """, (fecha_hoy,))
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         result = []
         for r in rows:
             try:
@@ -342,7 +358,7 @@ def get_asistencia(fecha: Optional[str] = None):
             FROM asistencia WHERE fecha = %s ORDER BY id
         """, (f,))
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return [{"usuario": r[0], "placa": r[1], "tipo": r[2], "hora": r[3], "fecha": r[4]} for r in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -379,7 +395,7 @@ def get_stats():
         cur.execute("SELECT COUNT(*) FROM vehiculos WHERE estado = 'activo'")
         vehiculos_activos = cur.fetchone()[0]
 
-        conn.close()
+        release_conn(conn)
         return {
             "ordenes_hoy":        servicios_hoy,
             "personal_activo":    total_personal,
@@ -593,7 +609,7 @@ async def crear_tablas():
         """)
 
         conn.commit()
-        conn.close()
+        release_conn(conn)
         print("Tablas de horarios creadas/verificadas OK")
     except Exception as e:
         print(f"Error creando tablas: {e}")
@@ -642,7 +658,7 @@ def get_novedades_tipo():
             FROM maestro_novedades_tipo WHERE activo = TRUE ORDER BY nombre
         """)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return [
             {"id": r[0], "nombre": r[1], "descripcion": r[2],
              "requiere_foto": r[3], "requiere_gps": r[4], "requiere_texto": r[5]}
@@ -662,7 +678,7 @@ def crear_novedad_tipo(n: NovedadTipoCreate):
         """, (n.nombre, n.descripcion, n.requiere_foto, n.requiere_gps, n.requiere_texto))
         nid = cur.fetchone()[0]
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True, "id": nid}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -778,7 +794,7 @@ def crear_marcacion(m: MarcacionCreate):
         ))
         marca_id = cur.fetchone()[0]
         conn.commit()
-        conn.close()
+        release_conn(conn)
 
         return {
             "ok": True,
@@ -808,7 +824,7 @@ def crear_ruta_v2(p: RutaCreate):
         """, (p.fecha, p.placa, json.dumps(p.empleados), p.h_inicio, p.h_fin, p.viaticos, p.tolerancia_minutos))
         ruta_id = cur.fetchone()[0]
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True, "ruta_id": ruta_id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -903,7 +919,7 @@ def monitor_rutas(fecha: Optional[str] = None):
                 "empleados_activos": sum(1 for e in marcaciones_empleados if e["ultima_marca"] != "SIN MARCAR")
             })
 
-        conn.close()
+        release_conn(conn)
         return resultado
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -951,7 +967,7 @@ def reporte_horas_extra(
         query += " ORDER BY h.fecha DESC, u.nombre"
         cur.execute(query, params)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
 
         return [
             {
@@ -1005,7 +1021,7 @@ def asistencia_detalle(
         query += " ORDER BY a.hora"
         cur.execute(query, params)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
 
         return [
             {
@@ -1036,7 +1052,7 @@ def editar_personal(uid: int, p: PersonalCreate):
         """, (p.nombre, p.doc, p.empresa,
               float(p.salario or 0), float(p.extra or 0), p.rol, uid))
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1051,7 +1067,7 @@ def toggle_personal(uid: int, activo: bool):
         """)
         cur.execute("UPDATE usuarios SET activo = %s WHERE id = %s", (activo, uid))
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True, "activo": activo}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1091,7 +1107,7 @@ def gps_ping(data: dict):
         """, (data.get("lat"), data.get("lng"),
               data.get("precision"), data.get("username")))
         conn.commit()
-        conn.close()
+        release_conn(conn)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1134,7 +1150,7 @@ def gps_activos():
             ORDER BY g.timestamp DESC
         """)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return [{
             "username": r[0], "nombre": r[1],
             "lat": float(r[2]) if r[2] else None,
@@ -1164,7 +1180,7 @@ def gps_recorrido(nombre: str, fecha: str = None):
             ORDER BY id ASC
         """, (nombre, fecha))
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return [{
             "tipo": r[0], "hora": r[1],
             "lat": float(r[2]), "lng": float(r[3]),
@@ -1212,7 +1228,7 @@ def gps_historico(fecha: str = None, nombre: str = None, placa: str = None, ruta
             ORDER BY usuario, id ASC
         """, params)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
 
         # Group by usuario
         from collections import defaultdict
@@ -1373,7 +1389,7 @@ def get_referencias(categoria: str = None, activo: bool = None):
             cur.execute("SELECT id,nombre,cantidad,unidad,descripcion,orden_display FROM referencia_piezas WHERE referencia_id=%s ORDER BY orden_display,id", (r[0],))
             piezas = [{"id":p[0],"nombre":p[1],"cantidad":p[2],"unidad":p[3],"descripcion":p[4],"orden":p[5]} for p in cur.fetchall()]
             result.append({"id":r[0],"codigo":r[1],"nombre":r[2],"categoria":r[3],"descripcion":r[4],"tiempo_estimado_min":r[5],"marca":r[6],"modelo":r[7],"foto_url":r[8],"activo":r[9],"piezas":piezas,"total_piezas":len(piezas)})
-        conn.close()
+        release_conn(conn)
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1393,7 +1409,7 @@ def crear_referencia(r: ReferenciaCreate):
                 INSERT INTO referencia_piezas (referencia_id,nombre,cantidad,unidad,descripcion,orden_display)
                 VALUES (%s,%s,%s,%s,%s,%s)
             """, (ref_id, p.get("nombre",""), p.get("cantidad",1), p.get("unidad","und"), p.get("descripcion",""), i))
-        conn.commit(); conn.close()
+        conn.commit(); release_conn(conn)
         return {"ok": True, "id": ref_id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1412,7 +1428,7 @@ def editar_referencia(rid: int, r: ReferenciaCreate):
                 INSERT INTO referencia_piezas (referencia_id,nombre,cantidad,unidad,descripcion,orden_display)
                 VALUES (%s,%s,%s,%s,%s,%s)
             """, (rid, p.get("nombre",""), p.get("cantidad",1), p.get("unidad","und"), p.get("descripcion",""), i))
-        conn.commit(); conn.close()
+        conn.commit(); release_conn(conn)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1445,7 +1461,7 @@ def get_ordenes(estado: str = None, tecnico_id: int = None):
             {where} ORDER BY o.fecha_creacion DESC
         """, params)
         rows = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return [{
             "id":r[0],"consecutivo":r[1],"tipo_servicio":r[2],"estado":r[3],
             "cliente_nombre":r[4],"cliente_direccion":r[5],"cliente_telefono":r[6],
@@ -1479,7 +1495,7 @@ def crear_orden(o: OrdenCreate, creado_por: str = "admin"):
               o.cliente_nombre,o.cliente_direccion,o.cliente_telefono,
               o.num_factura,o.observaciones,o.fecha_programada,creado_por))
         oid = cur.fetchone()[0]
-        conn.commit(); conn.close()
+        conn.commit(); release_conn(conn)
         return {"ok": True, "id": oid, "consecutivo": consecutivo}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1493,7 +1509,7 @@ def iniciar_orden(oid: int, lat: float = None, lng: float = None):
             fecha_inicio=NOW(), lat_inicio=%s, lng_inicio=%s
             WHERE id=%s
         """, (lat, lng, oid))
-        conn.commit(); conn.close()
+        conn.commit(); release_conn(conn)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1507,7 +1523,7 @@ def cerrar_orden(oid: int):
             duracion_min = EXTRACT(EPOCH FROM (NOW()-fecha_inicio))/60
             WHERE id=%s
         """, (oid,))
-        conn.commit(); conn.close()
+        conn.commit(); release_conn(conn)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1524,7 +1540,7 @@ def guardar_inspeccion(oid: int, items: list):
             """, (oid,item.get("pieza_id"),item.get("nombre_pieza"),item.get("estado","ok"),
                   item.get("novedad_descripcion",""),item.get("accion_solicitada","ninguna")))
         cur.execute("UPDATE ordenes_servicio SET estado='inspeccion' WHERE id=%s AND estado='en_curso'", (oid,))
-        conn.commit(); conn.close()
+        conn.commit(); release_conn(conn)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1546,7 +1562,7 @@ def detalle_orden(oid: int):
         inspeccion = cur.fetchall()
         cur.execute("SELECT * FROM novedades_servicio WHERE orden_id=%s ORDER BY id", (oid,))
         novedades = cur.fetchall()
-        conn.close()
+        release_conn(conn)
         return {
             "orden": dict(zip([d[0] for d in cur.description], o)) if False else {
                 "id":o[0],"consecutivo":o[1],"estado":o[3],
@@ -1573,7 +1589,7 @@ def crear_novedad(n: NovedadServicio):
             VALUES (%s,%s,%s,%s,%s) RETURNING id
         """, (n.orden_id,n.descripcion,n.tipo,n.accion,n.foto_url))
         nid = cur.fetchone()[0]
-        conn.commit(); conn.close()
+        conn.commit(); release_conn(conn)
         return {"ok": True, "id": nid}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
