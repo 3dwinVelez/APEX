@@ -33,7 +33,7 @@ def get_pool():
     if _pool is None:
         _pool = pg_pool.ThreadedConnectionPool(
             minconn=2,
-            maxconn=10,
+            maxconn=20,
             host=os.getenv("DB_HOST"),
             database=os.getenv("DB_NAME"),
             user=os.getenv("DB_USER"),
@@ -47,7 +47,20 @@ def get_conn():
     return get_pool().getconn()
 
 def release_conn(conn):
-    get_pool().putconn(conn)
+    if conn is None:
+        return
+    try:
+        if not conn.closed:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        get_pool().putconn(conn)
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 # ============================================================
 # MODELOS PYDANTIC (validacion de datos)
@@ -140,7 +153,8 @@ def login(req: LoginRequest):
         conn = get_conn()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, nombre, rol, username FROM usuarios WHERE username = %s AND password = %s",
+            """SELECT id, COALESCE(nombre, username) as nombre, rol, username
+               FROM usuarios WHERE username = %s AND password = %s""",
             (req.username, req.password)
         )
         row = cur.fetchone()
@@ -148,9 +162,9 @@ def login(req: LoginRequest):
         if row:
             return {
                 "usuario": {
-                    "id": row[0],
-                    "nombre": row[1],
-                    "rol": row[2],
+                    "id":       row[0],
+                    "nombre":   row[1],   # nunca null: cae a username si nombre es null
+                    "rol":      row[2],
                     "username": row[3]
                 }
             }
@@ -318,24 +332,28 @@ def get_rutas(fecha: Optional[str] = None):
     try:
         conn = get_conn()
         cur = conn.cursor()
-        if fecha:
-            cur.execute("""
-                SELECT vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog, fecha
-                FROM planeacion_rutas WHERE fecha = %s ORDER BY id DESC
-            """, (fecha,))
-        else:
-            fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-            cur.execute("""
-                SELECT vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog, fecha
-                FROM planeacion_rutas WHERE fecha = %s ORDER BY id DESC
-            """, (fecha_hoy,))
+        f = fecha if fecha else datetime.now().strftime("%Y-%m-%d")
+        cur.execute("""
+            SELECT id, vehiculo_placa, empleados_json, hora_inicio_prog,
+                   hora_fin_prog, fecha, viaticos, tolerancia_minutos
+            FROM planeacion_rutas WHERE fecha = %s ORDER BY id DESC
+        """, (f,))
         rows = cur.fetchall()
         release_conn(conn)
         result = []
         for r in rows:
             try:
-                empleados = json.loads(r[1]) if r[1] else []
-                result.append({"placa": r[0], "equipo": empleados, "h_inicio": r[2], "h_fin": r[3], "fecha": r[4]})
+                empleados = json.loads(r[2]) if r[2] else []
+                result.append({
+                    "id":       r[0],
+                    "placa":    r[1],
+                    "equipo":   empleados,
+                    "h_inicio": r[3],
+                    "h_fin":    r[4],
+                    "fecha":    str(r[5]),
+                    "viaticos": float(r[6]) if r[6] else 0,
+                    "tolerancia_minutos": int(r[7]) if r[7] else 15,
+                })
             except:
                 continue
         return result
@@ -348,18 +366,27 @@ def get_rutas(fecha: Optional[str] = None):
 # ASISTENCIA
 # ============================================================
 @app.get("/asistencia")
-def get_asistencia(fecha: Optional[str] = None):
+def get_asistencia(fecha: Optional[str] = None, usuario: Optional[str] = None, hoy: Optional[str] = None):
     try:
         conn = get_conn()
         cur = conn.cursor()
         f = fecha or datetime.now().strftime("%Y-%m-%d")
-        cur.execute("""
-            SELECT usuario, vehiculo_placa, tipo_marca, hora, fecha
-            FROM asistencia WHERE fecha = %s ORDER BY id
-        """, (f,))
+        if hoy == "1":
+            f = datetime.now().strftime("%Y-%m-%d")
+        query = "SELECT usuario, vehiculo_placa, tipo_marca, hora, fecha FROM asistencia WHERE fecha::text = %s"
+        params = [f]
+        if usuario:
+            query += " AND usuario = %s"
+            params.append(usuario)
+        query += " ORDER BY id ASC"
+        cur.execute(query, params)
         rows = cur.fetchall()
         release_conn(conn)
-        return [{"usuario": r[0], "placa": r[1], "tipo": r[2], "hora": r[3], "fecha": r[4]} for r in rows]
+        return [{
+            "usuario": r[0], "placa": r[1],
+            "tipo": r[2], "tipo_marca": r[2],   # ambos campos para compatibilidad
+            "hora": r[3], "fecha": str(r[4])
+        } for r in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -620,13 +647,27 @@ async def crear_tablas():
 # ============================================================
 class MarcacionCreate(BaseModel):
     usuario: str
-    vehiculo_placa: str
-    tipo_marca: str  # INGRESO | ALMUERZO | RETORNO | CIERRE
+    vehiculo_placa: Optional[str] = ""
+    tipo_marca: str
     latitud: Optional[float] = None
     longitud: Optional[float] = None
-    ruta_id: Optional[int] = None
-    novedad_tipo_id: Optional[int] = None
-    novedad_descripcion: Optional[str] = None
+    ruta_id: Optional[str] = None
+    novedad_tipo_id: Optional[str] = None
+    novedad_descripcion: Optional[str] = ""
+
+    def get_ruta_id(self):
+        try:
+            v = str(self.ruta_id or "").strip()
+            return int(v) if v else None
+        except Exception:
+            return None
+
+    def get_novedad_id(self):
+        try:
+            v = str(self.novedad_tipo_id or "").strip()
+            return int(v) if v else None
+        except Exception:
+            return None
 
 class RutaCreate(BaseModel):
     fecha: str
@@ -860,13 +901,14 @@ def monitor_rutas(fecha: Optional[str] = None):
             marcaciones_empleados = []
             for emp in empleados:
                 # Obtener TODAS las marcaciones del dia para este empleado
+            # Obtener TODAS las marcaciones del dia para este empleado en esta ruta
                 cur.execute("""
                     SELECT tipo_marca, hora, latitud, longitud, es_extra, minutos_extra
                     FROM asistencia
                     WHERE usuario = %s AND fecha::text = %s
-                    AND vehiculo_placa = %s
+                      AND (ruta_id = %s OR vehiculo_placa = %s)
                     ORDER BY id ASC
-                """, (emp, f, placa))
+                """, (emp, f, ruta_id, placa))
                 todas_marcas = cur.fetchall()
                 ultima = todas_marcas[-1] if todas_marcas else None
 
@@ -1076,7 +1118,7 @@ def toggle_personal(uid: int, activo: bool):
 # ==================== GPS TRACKING ====================
 @app.post("/gps/ping")
 def gps_ping(data: dict):
-    """Recibe posicion GPS de un usuario activo cada 5 min"""
+    """Recibe posicion GPS de un usuario activo - upsert por username+fecha"""
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -1092,20 +1134,32 @@ def gps_ping(data: dict):
                 fecha DATE DEFAULT CURRENT_DATE
             )
         """)
-        # Upsert: una sola fila por usuario por dia (actualiza)
+        # Agregar constraint unico si no existe
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'gps_tracking_username_fecha_key'
+                ) THEN
+                    ALTER TABLE gps_tracking
+                    ADD CONSTRAINT gps_tracking_username_fecha_key
+                    UNIQUE (username, fecha);
+                END IF;
+            END$$;
+        """)
+        # Upsert real: insert o actualizar si ya existe para hoy
         cur.execute("""
             INSERT INTO gps_tracking (username, nombre, latitud, longitud, precision_m, timestamp, fecha)
             VALUES (%s, %s, %s, %s, %s, NOW(), CURRENT_DATE)
-            ON CONFLICT DO NOTHING
+            ON CONFLICT (username, fecha) DO UPDATE SET
+                latitud    = EXCLUDED.latitud,
+                longitud   = EXCLUDED.longitud,
+                precision_m = EXCLUDED.precision_m,
+                timestamp  = NOW(),
+                nombre     = EXCLUDED.nombre
         """, (data.get("username"), data.get("nombre"),
               data.get("lat"), data.get("lng"), data.get("precision")))
-        # Always update latest position
-        cur.execute("""
-            UPDATE gps_tracking
-            SET latitud=%s, longitud=%s, precision_m=%s, timestamp=NOW()
-            WHERE username=%s AND fecha=CURRENT_DATE
-        """, (data.get("lat"), data.get("lng"),
-              data.get("precision"), data.get("username")))
         conn.commit()
         release_conn(conn)
         return {"ok": True}
@@ -1136,17 +1190,19 @@ def gps_activos():
                    u.rol,
                    COALESCE(
                      (SELECT tipo_marca FROM asistencia
-                      WHERE usuario = g.nombre AND fecha = CURRENT_DATE
+                      WHERE usuario = ANY(ARRAY[g.nombre, g.username, COALESCE(u.nombre, g.username)])
+                        AND fecha::text = CURRENT_DATE::text
                       ORDER BY id DESC LIMIT 1), 'SIN MARCAR'
                    ) as ultima_marca,
                    COALESCE(
                      (SELECT hora FROM asistencia
-                      WHERE usuario = g.nombre AND fecha = CURRENT_DATE
+                      WHERE usuario = ANY(ARRAY[g.nombre, g.username, COALESCE(u.nombre, g.username)])
+                        AND fecha::text = CURRENT_DATE::text
                       ORDER BY id DESC LIMIT 1), ''
                    ) as ultima_hora
             FROM gps_tracking g
             LEFT JOIN usuarios u ON u.username = g.username
-            WHERE g.fecha = CURRENT_DATE
+            WHERE g.fecha::text = CURRENT_DATE::text
             ORDER BY g.timestamp DESC
         """)
         rows = cur.fetchall()

@@ -3,9 +3,11 @@ import { C, API_URL } from "../shared/constants";
 import { Card, Btn, PageHeader, Spinner } from "../shared/ui";
 import { useGPSTracking } from "../shared/hooks";
 
+// ============================================================
+// ICONOS SVG DE CAMIONES (sin cambios, se mantienen igual)
+// ============================================================
 const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
   const c = color;
-  // Liviano (NHR, NKR, NPR, NNR, NQR) - camion pequeno
   if (["NHR","NKR","NPR","NNR","NQR"].includes(tipo)) return (
     <svg width={size} height={size*0.6} viewBox="0 0 120 72" fill="none">
       <rect x="38" y="18" width="70" height="36" rx="4" fill={c} opacity="0.15" stroke={c} strokeWidth="2"/>
@@ -19,7 +21,6 @@ const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
       <rect x="8" y="44" width="100" height="4" rx="1" fill={c} opacity="0.3"/>
     </svg>
   );
-  // Turbo / Sencillo - camion mediano
   if (["TURBO","SENCILLO"].includes(tipo)) return (
     <svg width={size} height={size*0.6} viewBox="0 0 130 72" fill="none">
       <rect x="42" y="14" width="78" height="40" rx="4" fill={c} opacity="0.15" stroke={c} strokeWidth="2"/>
@@ -32,10 +33,8 @@ const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
       <circle cx="112" cy="60" r="9" fill={c} opacity="0.3" stroke={c} strokeWidth="2"/>
       <circle cx="112" cy="60" r="4.5" fill={c}/>
       <rect x="6" y="48" width="114" height="4" rx="1" fill={c} opacity="0.3"/>
-      <rect x="80" y="30" width="12" height="8" rx="1" fill={c} opacity="0.5"/>
     </svg>
   );
-  // Dobletroque / Cuatro manos - camion pesado rigido
   if (["DOBLETROQUE","CUATRO MANOS"].includes(tipo)) return (
     <svg width={size} height={size*0.6} viewBox="0 0 140 72" fill="none">
       <rect x="44" y="10" width="88" height="46" rx="4" fill={c} opacity="0.15" stroke={c} strokeWidth="2"/>
@@ -52,19 +51,15 @@ const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
       <rect x="4" y="52" width="128" height="4" rx="1" fill={c} opacity="0.3"/>
     </svg>
   );
-  // Minimula / Tractomula - articulado
   if (["MINIMULA","TRACTOMULA"].includes(tipo)) return (
     <svg width={size*1.4} height={size*0.6} viewBox="0 0 180 72" fill="none">
-      {/* Cabezote */}
       <rect x="4" y="18" width="50" height="38" rx="4" fill={c} opacity="0.25" stroke={c} strokeWidth="2"/>
       <rect x="8" y="22" width="22" height="18" rx="2" fill={c} opacity="0.4"/>
       <circle cx="18" cy="62" r="8" fill={c} opacity="0.3" stroke={c} strokeWidth="2"/>
       <circle cx="18" cy="62" r="4" fill={c}/>
       <circle cx="44" cy="62" r="8" fill={c} opacity="0.3" stroke={c} strokeWidth="2"/>
       <circle cx="44" cy="62" r="4" fill={c}/>
-      {/* Union */}
       <rect x="52" y="38" width="10" height="8" rx="2" fill={c} opacity="0.5"/>
-      {/* Trailer */}
       <rect x="60" y="14" width="114" height="42" rx="3" fill={c} opacity="0.12" stroke={c} strokeWidth="2"/>
       <line x1="80" y1="14" x2="80" y2="56" stroke={c} strokeWidth="1" opacity="0.3"/>
       <line x1="106" y1="14" x2="106" y2="56" stroke={c} strokeWidth="1" opacity="0.3"/>
@@ -77,7 +72,6 @@ const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
       <circle cx="158" cy="62" r="4" fill={c}/>
     </svg>
   );
-  // Volqueta
   if (tipo === "VOLQUETA") return (
     <svg width={size} height={size*0.6} viewBox="0 0 130 72" fill="none">
       <rect x="42" y="20" width="78" height="28" rx="3" fill={c} opacity="0.15" stroke={c} strokeWidth="2"/>
@@ -92,7 +86,6 @@ const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
       <circle cx="114" cy="60" r="4.5" fill={c}/>
     </svg>
   );
-  // Carro tanque
   if (tipo === "CARRO TANQUE") return (
     <svg width={size} height={size*0.6} viewBox="0 0 130 72" fill="none">
       <ellipse cx="90" cy="34" rx="36" ry="20" fill={c} opacity="0.15" stroke={c} strokeWidth="2"/>
@@ -108,7 +101,6 @@ const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
       <circle cx="114" cy="60" r="4.5" fill={c}/>
     </svg>
   );
-  // Default / Otro
   return (
     <svg width={size} height={size*0.6} viewBox="0 0 120 72" fill="none">
       <rect x="30" y="20" width="82" height="34" rx="4" fill={c} opacity="0.15" stroke={c} strokeWidth="2"/>
@@ -122,203 +114,199 @@ const TruckIcon = ({ tipo, color = "#00B4D8", size = 80 }) => {
   );
 };
 
-// Clasificacion oficial Colombia - Resolucion 004100/2004 Ministerio de Transporte
-const TIPOS_VEHICULO = [
-  // ---- CAMIONES RIGIDOS LIVIANOS (C2) ----
-  {
-    tipo: "NHR", codigo: "C2", categoria: "Camion Liviano",
-    marcas: "Chevrolet / Isuzu",
-    capacidad: "Hasta 2 ton", pbv: "3.5 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "2.8L / 4JB1",
-    motor: "Isuzu 4JB1 Turbo Diesel - 94 HP",
-    alto: "2.10 m", ancho: "1.90 m", largo: "4.70 m",
-    licencia: "C1", descripcion: "Camioneta de carga urbana. Ideal para entregas en ciudad.",
-    color_cat: "#06D6A0"
-  },
-  {
-    tipo: "NKR", codigo: "C2", categoria: "Camion Liviano",
-    marcas: "Chevrolet / Isuzu",
-    capacidad: "Hasta 3 ton", pbv: "5.5 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "2.8L / 4JB1",
-    motor: "Isuzu 4JB1 Turbo Diesel - 94 HP",
-    alto: "2.10 m", ancho: "2.00 m", largo: "5.20 m",
-    licencia: "C1", descripcion: "Camion liviano para distribucion urbana y regional.",
-    color_cat: "#06D6A0"
-  },
-  {
-    tipo: "NPR", codigo: "C2", categoria: "Camion Liviano",
-    marcas: "Chevrolet / Isuzu",
-    capacidad: "Hasta 4.8 ton", pbv: "7.5 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "4.5L / 4HK1",
-    motor: "Isuzu 4HK1-TCN Turbo Intercooler - 153 HP",
-    alto: "2.20 m", ancho: "2.10 m", largo: "5.98 m",
-    licencia: "C1", descripcion: "El mas comercializado en Colombia. Distribucion regional y urbana.",
-    color_cat: "#06D6A0"
-  },
-  {
-    tipo: "NNR", codigo: "C2", categoria: "Camion Liviano",
-    marcas: "Chevrolet / Isuzu",
-    capacidad: "Hasta 4 ton", pbv: "6.3 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "3.0L / 4JJ1",
-    motor: "Isuzu 4JJ1 TC Turbo Intercooler - 122 HP",
-    alto: "2.20 m", ancho: "2.10 m", largo: "6.10 m",
-    licencia: "C1", descripcion: "Camion liviano de capacidad intermedia entre NKR y NPR.",
-    color_cat: "#06D6A0"
-  },
-  {
-    tipo: "NQR", codigo: "C2", categoria: "Camion Liviano",
-    marcas: "Chevrolet / Isuzu",
-    capacidad: "Hasta 5.5 ton", pbv: "8.5 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "4.5L / 4HG1T",
-    motor: "Isuzu 4HG1T - 120 HP",
-    alto: "2.20 m", ancho: "2.10 m", largo: "5.85 m",
-    licencia: "C2", descripcion: "Camion liviano-mediano. Carga regional con terreno dificil.",
-    color_cat: "#06D6A0"
-  },
-  // ---- TURBO (C2) ----
-  {
-    tipo: "TURBO", codigo: "C2", categoria: "Camion Mediano",
-    marcas: "Hino / Foton / JMC / JAC",
-    capacidad: "4.5 - 8.5 ton", pbv: "10 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "4.0L - 5.0L",
-    motor: "Diesel Turbo 4 cilindros - 130-180 HP",
-    alto: "2.20 m", ancho: "2.10 m", largo: "5.00 m",
-    licencia: "C2", descripcion: "Camion mediano muy usado en distribucion regional y carga moderada.",
-    color_cat: "#00B4D8"
-  },
-  // ---- SENCILLO (C2) ----
-  {
-    tipo: "SENCILLO", codigo: "C2", categoria: "Camion Mediano",
-    marcas: "Freightliner / Kenworth / Hino / Internacional",
-    capacidad: "8 - 10 ton", pbv: "17 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "6.0L - 8.0L",
-    motor: "Diesel 6 cilindros - 200-280 HP",
-    alto: "2.40 m", ancho: "2.40 m", largo: "6.50 m",
-    licencia: "C2", descripcion: "Camion de 2 ejes. Carga intermedia nacional.",
-    color_cat: "#00B4D8"
-  },
-  // ---- DOBLETROQUE (C3) ----
-  {
-    tipo: "DOBLETROQUE", codigo: "C3", categoria: "Camion Pesado",
-    marcas: "Kenworth / Freightliner / Volvo / Hino",
-    capacidad: "Hasta 17 ton", pbv: "28.5 ton",
-    ejes: 3, combustible: "Diesel", cilindraje: "8.0L - 12.0L",
-    motor: "Diesel 6 cilindros Turbo - 280-380 HP",
-    alto: "2.40 m", ancho: "2.40 m", largo: "7.20 m",
-    licencia: "C3", descripcion: "Camion rigido de 3 ejes. Carga pesada nacional.",
-    color_cat: "#F59E0B"
-  },
-  // ---- CUATRO MANOS (C4) ----
-  {
-    tipo: "CUATRO MANOS", codigo: "C4", categoria: "Camion Pesado",
-    marcas: "Kenworth / Freightliner / Internacional",
-    capacidad: "Hasta 24 ton", pbv: "36 ton",
-    ejes: 4, combustible: "Diesel", cilindraje: "12.0L - 15.0L",
-    motor: "Diesel 6 cilindros Turbo - 350-450 HP",
-    alto: "2.40 m", ancho: "2.40 m", largo: "7.60 m",
-    licencia: "C3", descripcion: "Camion rigido de 4 ejes. Carga muy pesada.",
-    color_cat: "#F59E0B"
-  },
-  // ---- ARTICULADOS ----
-  {
-    tipo: "MINIMULA", codigo: "C2S2", categoria: "Articulado",
-    marcas: "Kenworth / Freightliner / Volvo / Mack",
-    capacidad: "Hasta 20 ton", pbv: "32 ton",
-    ejes: 4, combustible: "Diesel", cilindraje: "12.0L+",
-    motor: "Diesel 6 cilindros Turbo - 350-480 HP",
-    alto: "2.40 m", ancho: "2.40 m", largo: "12.5 m",
-    licencia: "C3", descripcion: "Tractocamion con semirremolque de 2 ejes. Distancias intermedias.",
-    color_cat: "#8B5CF6"
-  },
-  {
-    tipo: "TRACTOMULA", codigo: "C3S3", categoria: "Articulado",
-    marcas: "Kenworth / Freightliner / Volvo / Mack / International",
-    capacidad: "Hasta 35 ton", pbv: "52 ton",
-    ejes: 6, combustible: "Diesel", cilindraje: "12.0L - 15.0L",
-    motor: "Diesel 6 cilindros Turbo - 430-600 HP",
-    alto: "2.40 m", ancho: "2.40 m", largo: "18.50 m",
-    licencia: "C3", descripcion: "Mayor capacidad de carga del pais. Transporte de larga distancia.",
-    color_cat: "#8B5CF6"
-  },
-  // ---- ESPECIALES ----
-  {
-    tipo: "VOLQUETA", codigo: "C2/C3", categoria: "Especial",
-    marcas: "Mack / Kenworth / Hino / Chevrolet",
-    capacidad: "8 - 17 ton", pbv: "28.5 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "6.0L - 12.0L",
-    motor: "Diesel Turbo - 200-380 HP",
-    alto: "2.40 m", ancho: "2.40 m", largo: "6.50 m",
-    licencia: "C2/C3", descripcion: "Carga en obra, materiales a granel. Carroceria volcable.",
-    color_cat: "#EF4444"
-  },
-  {
-    tipo: "CARRO TANQUE", codigo: "C2/C3", categoria: "Especial",
-    marcas: "Varios / Carroceria especializada",
-    capacidad: "5.000 - 20.000 L", pbv: "28.5 ton",
-    ejes: 2, combustible: "Diesel", cilindraje: "6.0L+",
-    motor: "Diesel Turbo - 200-380 HP",
-    alto: "2.40 m", ancho: "2.40 m", largo: "6.50 m",
-    licencia: "C2/C3", descripcion: "Transporte de liquidos: combustible, agua, quimicos.",
-    color_cat: "#EF4444"
-  },
-  {
-    tipo: "OTRO", codigo: "--", categoria: "Otro",
-    marcas: "", capacidad: "", pbv: "",
-    ejes: 0, combustible: "Diesel", cilindraje: "",
-    motor: "", alto: "", ancho: "", largo: "",
-    licencia: "C1", descripcion: "Otro tipo de vehiculo no listado.",
-    color_cat: "#6B7A8D"
-  },
-];
+// ============================================================
+// CONSTANTES
+// ============================================================
+const ESTADO_CONFIG = {
+  "INGRESO":     { color: "#06D6A0", label: "En Jornada",  pulse: true  },
+  "ALMUERZO":    { color: "#F59E0B", label: "Almuerzo",    pulse: false },
+  "RETORNO":     { color: "#00B4D8", label: "Trabajando",  pulse: true  },
+  "CIERRE":      { color: "#8B5CF6", label: "Finalizo",    pulse: false },
+  "SIN MARCAR":  { color: "#94A3B8", label: "Sin iniciar", pulse: false },
+};
 
-// ==================== MAPA OPERARIOS ====================
+const MARCA_CONFIG = {
+  "INGRESO":  { color: "#06D6A0", label: "Ingreso"  },
+  "ALMUERZO": { color: "#F59E0B", label: "Almuerzo" },
+  "RETORNO":  { color: "#00B4D8", label: "Retorno"  },
+  "CIERRE":   { color: "#8B5CF6", label: "Cierre"   },
+};
 
+const COLORES_OP = ["#06D6A0","#00B4D8","#F59E0B","#8B5CF6","#EF4444","#EC4899","#14B8A6","#F97316"];
+
+const OFFLINE_UMBRAL_MIN = 10; // alerta si no actualiza en +10 min
+
+// ============================================================
+// HELPERS
+// ============================================================
+const getMinutosDesdeUpdate = (timestamp) => {
+  if (!timestamp) return null;
+  return Math.floor((Date.now() - new Date(timestamp)) / 60000);
+};
+
+const isOffline = (timestamp) => {
+  const mins = getMinutosDesdeUpdate(timestamp);
+  return mins !== null && mins > OFFLINE_UMBRAL_MIN;
+};
+
+// ============================================================
+// SUB-COMPONENTE: Panel lateral de detalle del operario seleccionado
+// ============================================================
+const PanelDetalle = ({ op, onCerrar, onVerRecorrido }) => {
+  if (!op) return null;
+  const cfg  = ESTADO_CONFIG[op.ultima_marca] || ESTADO_CONFIG["SIN MARCAR"];
+  const mins = getMinutosDesdeUpdate(op.timestamp);
+  const offline = isOffline(op.timestamp);
+  const initials = (op.nombre || "??").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+  return (
+    <div style={{
+      position: "absolute", top: 10, right: 10, zIndex: 1000,
+      width: 240, background: C.card, borderRadius: 14,
+      border: "1px solid " + C.border,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.14)", padding: 16
+    }}>
+      {/* Cerrar */}
+      <button onClick={onCerrar} style={{
+        position: "absolute", top: 10, right: 10,
+        background: "none", border: "none", cursor: "pointer",
+        color: C.muted, fontSize: 16, lineHeight: 1, fontWeight: 700
+      }}>x</button>
+
+      {/* Avatar + nombre */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: "50%",
+          background: cfg.color + "20", border: "2px solid " + cfg.color,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontWeight: 900, fontSize: 14, color: cfg.color, flexShrink: 0
+        }}>
+          {initials}
+        </div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 13, lineHeight: 1.3 }}>
+            {op.nombre || op.username}
+          </div>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            padding: "2px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+            background: cfg.color + "15", color: cfg.color,
+            border: "1px solid " + cfg.color + "28", marginTop: 2
+          }}>
+            {cfg.pulse && (
+              <span style={{ display: "inline-block", width: 5, height: 5,
+                borderRadius: "50%", background: cfg.color,
+                boxShadow: "0 0 4px " + cfg.color }} />
+            )}
+            {cfg.label}
+          </span>
+        </div>
+      </div>
+
+      {/* Alerta offline */}
+      {offline && (
+        <div style={{ padding: "6px 10px", borderRadius: 8, marginBottom: 10,
+          background: "#F59E0B10", border: "1px solid #F59E0B28",
+          fontSize: 10, fontWeight: 700, color: "#F59E0B" }}>
+          Sin actualizacion hace {mins} min
+        </div>
+      )}
+
+      {/* Info */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11 }}>
+        {op.ultima_hora && (
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: C.muted }}>Ultima marca</span>
+            <strong>{op.ultima_hora}</strong>
+          </div>
+        )}
+        {mins !== null && (
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: C.muted }}>GPS actualizado</span>
+            <strong style={{ color: offline ? "#F59E0B" : C.success }}>
+              {mins < 1 ? "Ahora" : "Hace " + mins + " min"}
+            </strong>
+          </div>
+        )}
+        {op.precision && (
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: C.muted }}>Precision GPS</span>
+            <strong>{Math.round(op.precision)}m</strong>
+          </div>
+        )}
+        {op.rol && (
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: C.muted }}>Rol</span>
+            <strong style={{ textTransform: "capitalize" }}>{op.rol}</strong>
+          </div>
+        )}
+      </div>
+
+      {/* Acciones */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+        <button
+          onClick={() => window.open(
+            "https://www.google.com/maps?q=" + op.lat + "," + op.lng + "&z=17",
+            "_blank"
+          )}
+          style={{ width: "100%", padding: "8px 0", borderRadius: 8,
+            background: C.accent + "15", border: "1px solid " + C.accent + "30",
+            color: C.accent, fontWeight: 700, fontSize: 11,
+            cursor: "pointer", fontFamily: "inherit" }}>
+          Ver en Google Maps
+        </button>
+        <button onClick={() => onVerRecorrido(op)}
+          style={{ width: "100%", padding: "8px 0", borderRadius: 8,
+            background: "#8B5CF615", border: "1px solid #8B5CF628",
+            color: "#8B5CF6", fontWeight: 700, fontSize: 11,
+            cursor: "pointer", fontFamily: "inherit" }}>
+          Ver recorrido del dia
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// MAPA OPERARIOS - COMPONENTE PRINCIPAL
+// ============================================================
 const MapaOperarios = ({ user }) => {
-  const mapRef = useRef(null);
+  const mapRef         = useRef(null);
   const mapInstanceRef = useRef(null);
-  const markersRef = useRef({});
-  const [operarios, setOperarios] = useState([]);
-  const [selOp, setSelOp] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState(null);
-  const [recorrido, setRecorrido] = useState([]);
-  const [recorridoOp, setRecorridoOp] = useState(null);
+  const markersRef     = useRef({});
   const recorridoLayerRef = useRef(null);
-  // Historico GPS
-  const [modoMapa, setModoMapa]             = useState("vivo");
-  const [histFecha, setHistFecha]           = useState(new Date(Date.now()-86400000).toISOString().split("T")[0]);
-  const [histNombre, setHistNombre]         = useState("");
-  const [histPlaca, setHistPlaca]           = useState("");
+  const histLayersRef  = useRef([]);
+  const refreshTimerRef = useRef(null);
+
+  const [operarios,      setOperarios]      = useState([]);
+  const [selOp,          setSelOp]          = useState(null);
+  const [loading,        setLoading]        = useState(false);
+  const [lastUpdate,     setLastUpdate]     = useState(null);
+  const [filtroEstado,   setFiltroEstado]   = useState("todos");
+  const [refreshInterval,setRefreshInterval]= useState(60);
+
+  // Historico
+  const [modoMapa,       setModoMapa]       = useState("vivo");
+  const [histFecha,      setHistFecha]      = useState(new Date(Date.now()-86400000).toISOString().split("T")[0]);
+  const [histNombre,     setHistNombre]     = useState("");
+  const [histPlaca,      setHistPlaca]      = useState("");
   const [histResultados, setHistResultados] = useState([]);
-  const [histLoading, setHistLoading]       = useState(false);
-  const histLayersRef                       = useRef([]);
-  const [personalGps, setPersonalGps]       = useState([]);
-  const [vehiculosGps, setVehiculosGps]     = useState([]);
+  const [histLoading,    setHistLoading]    = useState(false);
+
+  const [personalGps,    setPersonalGps]    = useState([]);
+  const [vehiculosGps,   setVehiculosGps]   = useState([]);
+
+  const { posicion, gpsError, gpsActivo } = useGPSTracking(user, 0.5);
+
   useEffect(() => {
-    fetch(`${API_URL}/personal`).then(r=>r.json()).then(d=>setPersonalGps(Array.isArray(d)?d:[])).catch(()=>{});
-    fetch(`${API_URL}/vehiculos`).then(r=>r.json()).then(d=>setVehiculosGps(Array.isArray(d)?d:[])).catch(()=>{});
+    fetch(API_URL + "/personal").then(r=>r.json()).then(d=>setPersonalGps(Array.isArray(d)?d:[])).catch(()=>{});
+    fetch(API_URL + "/vehiculos").then(r=>r.json()).then(d=>setVehiculosGps(Array.isArray(d)?d:[])).catch(()=>{});
   }, []);
-  const { posicion, gpsError, gpsActivo } = useGPSTracking(user, 5);
 
-  const estadoConfig = {
-    "INGRESO":    { color: "#06D6A0", label: "En Jornada",  pulse: true  },
-    "ALMUERZO":   { color: "#F59E0B", label: "Almuerzo",    pulse: false },
-    "RETORNO":    { color: "#00B4D8", label: "Trabajando",  pulse: true  },
-    "CIERRE":     { color: "#8B5CF6", label: "Finalizo",    pulse: false },
-    "SIN MARCAR": { color: "#94A3B8", label: "Sin iniciar", pulse: false },
-  };
-
-  const MARCA_CONFIG = {
-    "INGRESO":  { color: "#06D6A0", label: "Ingreso"  },
-    "ALMUERZO": { color: "#F59E0B", label: "Almuerzo" },
-    "RETORNO":  { color: "#00B4D8", label: "Retorno"  },
-    "CIERRE":   { color: "#8B5CF6", label: "Cierre"   },
-  };
-
+  // ---- Cargar operarios ----
   const cargarOperarios = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${API_URL}/gps/activos`);
+      const r = await fetch(API_URL + "/gps/activos");
       const d = await r.json();
       setOperarios(Array.isArray(d) ? d : []);
       setLastUpdate(new Date());
@@ -326,91 +314,114 @@ const MapaOperarios = ({ user }) => {
     setLoading(false);
   };
 
-  // Init Leaflet map
+  // ---- Init mapa Leaflet ----
   useEffect(() => {
     if (mapInstanceRef.current) return;
     const L = window.L;
     if (!L || !mapRef.current) return;
-
     const map = L.map(mapRef.current, {
       center: [4.711, -74.0721], zoom: 12,
-      zoomControl: true, attributionControl: false
+      zoomControl: true,
+      attributionControl: false,
+      dragging: true,
+      touchZoom: true,
+      scrollWheelZoom: true,
+      doubleClickZoom: true,
+      boxZoom: true,
+      keyboard: true,
     });
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19
-    }).addTo(map);
-
-    // Dark overlay for style
-    L.tileLayer("https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19, opacity: 0.6
-    }).addTo(map);
-
+    // Tile Carto Voyager - empresarial, sin conflictos, sin API key
+    L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+      { maxZoom: 19, subdomains: "abcd" }
+    ).addTo(map);
+    // Forzar resize despues de montaje para evitar tiles grises
+    setTimeout(() => map.invalidateSize(), 200);
     mapInstanceRef.current = map;
     cargarOperarios();
   }, []);
 
-  // Update markers when operarios change
+  // ---- Auto-refresh configurable ----
+  useEffect(() => {
+    if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+    refreshTimerRef.current = setInterval(cargarOperarios, refreshInterval * 1000);
+    return () => clearInterval(refreshTimerRef.current);
+  }, [refreshInterval]);
+
+  // ---- Actualizar marcadores en el mapa ----
   useEffect(() => {
     const L = window.L;
     const map = mapInstanceRef.current;
-    if (!L || !map || operarios.length === 0) return;
+    if (!L || !map) return;
 
-    // Remove old markers
-    Object.values(markersRef.current).forEach(m => map.removeLayer(m));
+    Object.values(markersRef.current).forEach(m => { try { map.removeLayer(m); } catch {} });
     markersRef.current = {};
 
-    const bounds = [];
+    if (operarios.length === 0) return;
 
+    const bounds = [];
     operarios.forEach(op => {
       if (!op.lat || !op.lng) return;
-      const cfg = estadoConfig[op.ultima_marca] || estadoConfig["SIN MARCAR"];
-      const color = cfg.color;
+      const cfg     = ESTADO_CONFIG[op.ultima_marca] || ESTADO_CONFIG["SIN MARCAR"];
+      const color   = cfg.color;
+      const offline = isOffline(op.timestamp);
+      const mins    = getMinutosDesdeUpdate(op.timestamp);
       const initials = (op.nombre || "??").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
 
-      const iconHtml = `
-        <div style="
-          width:42px; height:42px; border-radius:50%;
-          background:${color}; border:3px solid white;
-          box-shadow:0 2px 12px ${color}80;
-          display:flex; align-items:center; justify-content:center;
-          font-weight:900; font-size:12px; color:white;
-          font-family:sans-serif; position:relative;
-          ${cfg.pulse ? `animation:pulse-marker 2s infinite;` : ""}
-        ">
-          ${initials}
-          <div style="
-            position:absolute; bottom:-4px; right:-4px;
-            width:14px; height:14px; border-radius:50%;
-            background:${color}; border:2px solid white;
-          "></div>
-        </div>
-      `;
+      // Icono con indicador offline si aplica
+      const iconHtml =
+        "<div style=\"" +
+          "width:42px;height:42px;border-radius:50%;" +
+          "background:" + (offline ? "#F59E0B" : color) + ";" +
+          "border:3px solid white;" +
+          "box-shadow:0 2px 12px " + color + "80;" +
+          "display:flex;align-items:center;justify-content:center;" +
+          "font-weight:900;font-size:12px;color:white;" +
+          "font-family:sans-serif;position:relative;" +
+          (cfg.pulse && !offline ? "animation:pulse-marker 2s infinite;" : "") +
+        "\">" +
+          initials +
+          "<div style=\"" +
+            "position:absolute;bottom:-4px;right:-4px;" +
+            "width:14px;height:14px;border-radius:50%;" +
+            "background:" + (offline ? "#F59E0B" : color) + ";" +
+            "border:2px solid white;" +
+          "\"></div>" +
+        "</div>";
 
       const icon = L.divIcon({
         html: iconHtml, className: "", iconSize: [42, 42], iconAnchor: [21, 21]
       });
 
-      const mins = op.timestamp ? Math.floor((Date.now() - new Date(op.timestamp)) / 60000) : null;
-      const popup = L.popup({ maxWidth: 220, className: "apex-popup" }).setContent(`
-        <div style="font-family:sans-serif; padding:4px;">
-          <div style="font-weight:900; font-size:14px;">${op.nombre || op.username}</div>
-          <div style="display:inline-block; padding:2px 8px; border-radius:10px;
-            background:${color}20; color:${color}; font-size:11px; font-weight:700; margin:4px 0;">
-            ${cfg.label}
-          </div>
-          ${op.ultima_hora ? `<div style="font-size:11px; color:#6B7A8D;">Ultima marca: ${op.ultima_hora}</div>` : ""}
-          ${mins !== null ? `<div style="font-size:11px; color:#6B7A8D;">Actualizado hace ${mins < 1 ? "menos de 1 min" : mins + " min"}</div>` : ""}
-          ${op.precision ? `<div style="font-size:10px; color:#94A3B8;">Precision: ${Math.round(op.precision)}m</div>` : ""}
-          <div style="margin-top:8px;">
-            <a href="https://www.google.com/maps?q=${op.lat},${op.lng}" target="_blank"
-              style="font-size:11px; color:#00B4D8; text-decoration:none; font-weight:600;">
-              Ver en Google Maps
-            </a>
-          </div>
-        </div>
-      `);
+      const popupContent =
+        "<div style=\"font-family:sans-serif;padding:4px;min-width:180px\">" +
+          "<div style=\"font-weight:900;font-size:14px\">" + (op.nombre || op.username) + "</div>" +
+          "<div style=\"display:inline-block;padding:2px 8px;border-radius:10px;" +
+            "background:" + color + "20;color:" + color + ";font-size:11px;font-weight:700;margin:4px 0\">" +
+            cfg.label +
+          "</div>" +
+          (offline
+            ? "<div style=\"font-size:10px;color:#F59E0B;font-weight:700\">Sin senal hace " + mins + " min</div>"
+            : "") +
+          (op.ultima_hora
+            ? "<div style=\"font-size:11px;color:#6B7A8D\">Ultima marca: " + op.ultima_hora + "</div>"
+            : "") +
+          (mins !== null
+            ? "<div style=\"font-size:11px;color:#6B7A8D\">GPS: " +
+              (mins < 1 ? "ahora mismo" : "hace " + mins + " min") + "</div>"
+            : "") +
+          (op.precision
+            ? "<div style=\"font-size:10px;color:#94A3B8\">Precision: " + Math.round(op.precision) + "m</div>"
+            : "") +
+          "<div style=\"margin-top:8px\">" +
+            "<a href=\"https://www.google.com/maps?q=" + op.lat + "," + op.lng + "\" target=\"_blank\"" +
+              " style=\"font-size:11px;color:#00B4D8;text-decoration:none;font-weight:700\">" +
+              "Ver en Google Maps" +
+            "</a>" +
+          "</div>" +
+        "</div>";
 
+      const popup = L.popup({ maxWidth: 220, className: "apex-popup" }).setContent(popupContent);
       const marker = L.marker([op.lat, op.lng], { icon }).addTo(map).bindPopup(popup);
       marker.on("click", () => setSelOp(op));
       markersRef.current[op.username] = marker;
@@ -422,25 +433,13 @@ const MapaOperarios = ({ user }) => {
     }
   }, [operarios]);
 
-  // Auto refresh every 5 min
-  useEffect(() => {
-    const iv = setInterval(cargarOperarios, 5 * 60 * 1000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const activos = operarios.filter(o => ["INGRESO","RETORNO"].includes(o.ultima_marca));
-  const enAlmuerzo = operarios.filter(o => o.ultima_marca === "ALMUERZO");
-  const finalizados = operarios.filter(o => o.ultima_marca === "CIERRE");
-
-  const COLORES_OP = ["#06D6A0","#00B4D8","#F59E0B","#8B5CF6","#EF4444","#EC4899","#14B8A6","#F97316"];
-
+  // ---- Limpiar capas ----
   const limpiarRecorrido = () => {
     const map = mapInstanceRef.current;
     if (recorridoLayerRef.current && map) {
       recorridoLayerRef.current.forEach(l => { try { map.removeLayer(l); } catch {} });
       recorridoLayerRef.current = null;
     }
-    setRecorrido([]); setRecorridoOp(null);
   };
 
   const limpiarHistorico = () => {
@@ -452,8 +451,50 @@ const MapaOperarios = ({ user }) => {
     setHistResultados([]);
   };
 
+  // ---- Ver recorrido del operario (modo vivo -> historico rapido) ----
+  const verRecorridoOperario = async (op) => {
+    const L = window.L;
+    const map = mapInstanceRef.current;
+    if (!L || !map) return;
+    limpiarRecorrido();
+    try {
+      const r = await fetch(API_URL + "/gps/recorrido/" + encodeURIComponent(op.nombre));
+      const puntos = await r.json();
+      if (!Array.isArray(puntos) || puntos.length === 0) return;
+      const layers = [];
+      const coords = puntos.map(p => [p.lat, p.lng]);
+      const color  = ESTADO_CONFIG[op.ultima_marca]?.color || "#00B4D8";
+      const poly   = L.polyline(coords, { color, weight: 3, opacity: 0.9, dashArray: "8,5" }).addTo(map);
+      layers.push(poly);
+      puntos.forEach((p, i) => {
+        const mc = MARCA_CONFIG[p.tipo] || { color: "#94A3B8", label: p.tipo };
+        const icn = L.divIcon({
+          html: "<div style=\"width:26px;height:26px;border-radius:50%;background:" + mc.color +
+                ";border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.25);display:flex;" +
+                "align-items:center;justify-content:center;font-weight:900;font-size:10px;color:white\">" +
+                (i+1) + "</div>",
+          className: "", iconSize: [26,26], iconAnchor: [13,13]
+        });
+        const mk = L.marker([p.lat, p.lng], { icon: icn }).addTo(map).bindPopup(
+          "<div style=\"font-family:sans-serif;padding:4px;min-width:140px\">" +
+            "<div style=\"font-weight:800;color:" + mc.color + "\">" + mc.label + "</div>" +
+            "<div style=\"font-size:11px;color:#6B7A8D;margin-top:4px\">Hora: " + p.hora + "</div>" +
+            (p.placa ? "<div style=\"font-size:11px;color:#6B7A8D\">Vehiculo: " + p.placa + "</div>" : "") +
+            "<a href=\"https://maps.google.com/?q=" + p.lat + "," + p.lng + "\" target=\"_blank\"" +
+            " style=\"font-size:11px;color:#00B4D8;font-weight:700;display:block;margin-top:4px\">Ver GPS</a>" +
+          "</div>"
+        );
+        layers.push(mk);
+      });
+      recorridoLayerRef.current = layers;
+      try { map.fitBounds(coords, { padding: [40,40], maxZoom: 16 }); } catch {}
+    } catch {}
+  };
+
+  // ---- Historico ----
   const dibujarHistorico = (grupos) => {
-    const L = window.L; const map = mapInstanceRef.current;
+    const L = window.L;
+    const map = mapInstanceRef.current;
     if (!L || !map) return;
     const allLayers = [], allBounds = [];
     grupos.forEach((grupo, gi) => {
@@ -461,16 +502,30 @@ const MapaOperarios = ({ user }) => {
       const puntos = grupo.marcaciones || [];
       if (!puntos.length) return;
       const coords = puntos.map(p => [p.lat, p.lng]);
-      const poly = L.polyline(coords, { color, weight:3, opacity:0.85, dashArray:"8,5" }).addTo(map);
+      const poly = L.polyline(coords, { color, weight: 3, opacity: 0.85, dashArray: "8,5" }).addTo(map);
       allLayers.push(poly);
       coords.forEach(c => allBounds.push(c));
       puntos.forEach((p, i) => {
-        const mc = MARCA_CONFIG[p.tipo] || { color:"#94A3B8", label: p.tipo };
-        const icon = L.divIcon({ html:`<div style="width:30px;height:30px;border-radius:50%;background:${mc.color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:white;">${i+1}</div>`, className:"", iconSize:[30,30], iconAnchor:[15,15] });
-        const marker = L.marker([p.lat,p.lng],{icon}).addTo(map).bindPopup(
-          `<div style="font-family:sans-serif;padding:4px;min-width:160px"><div style="font-weight:800;color:${color}">${grupo.nombre}</div><span style="display:inline-block;padding:2px 8px;border-radius:8px;background:${mc.color}20;color:${mc.color};font-size:11px;font-weight:700">${mc.label}</span><div style="font-size:11px;color:#6B7A8D;margin-top:4px">Hora: ${p.hora}</div>${p.placa?`<div style="font-size:11px;color:#6B7A8D">Vehiculo: ${p.placa}</div>`:""}<a href="https://maps.google.com/?q=${p.lat},${p.lng}" target="_blank" style="font-size:11px;color:#00B4D8;font-weight:600;display:block;margin-top:4px">Ver en Google Maps</a></div>`
+        const mc = MARCA_CONFIG[p.tipo] || { color: "#94A3B8", label: p.tipo };
+        const icn = L.divIcon({
+          html: "<div style=\"width:28px;height:28px;border-radius:50%;background:" + mc.color +
+                ";border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.25);display:flex;" +
+                "align-items:center;justify-content:center;font-weight:900;font-size:10px;color:white\">" +
+                (i+1) + "</div>",
+          className: "", iconSize: [28,28], iconAnchor: [14,14]
+        });
+        const mk = L.marker([p.lat,p.lng],{icon:icn}).addTo(map).bindPopup(
+          "<div style=\"font-family:sans-serif;padding:4px;min-width:160px\">" +
+            "<div style=\"font-weight:800;color:" + color + "\">" + grupo.nombre + "</div>" +
+            "<span style=\"display:inline-block;padding:2px 8px;border-radius:8px;background:" + mc.color + "20;" +
+            "color:" + mc.color + ";font-size:11px;font-weight:700\">" + mc.label + "</span>" +
+            "<div style=\"font-size:11px;color:#6B7A8D;margin-top:4px\">Hora: " + p.hora + "</div>" +
+            (p.placa ? "<div style=\"font-size:11px;color:#6B7A8D\">Vehiculo: " + p.placa + "</div>" : "") +
+            "<a href=\"https://maps.google.com/?q=" + p.lat + "," + p.lng + "\" target=\"_blank\"" +
+            " style=\"font-size:11px;color:#00B4D8;font-weight:700;display:block;margin-top:4px\">Ver en Google Maps</a>" +
+          "</div>"
         );
-        allLayers.push(marker);
+        allLayers.push(mk);
       });
     });
     histLayersRef.current = allLayers;
@@ -478,12 +533,13 @@ const MapaOperarios = ({ user }) => {
   };
 
   const buscarHistorico = async () => {
-    setHistLoading(true); limpiarHistorico();
+    setHistLoading(true);
+    limpiarHistorico();
     try {
       const params = new URLSearchParams({ fecha: histFecha });
       if (histNombre) params.append("nombre", histNombre);
       if (histPlaca)  params.append("placa",  histPlaca);
-      const r = await fetch(`${API_URL}/gps/historico?${params}`);
+      const r = await fetch(API_URL + "/gps/historico?" + params);
       const d = await r.json();
       const res = Array.isArray(d) ? d : [];
       setHistResultados(res);
@@ -492,211 +548,397 @@ const MapaOperarios = ({ user }) => {
     setHistLoading(false);
   };
 
-  return (
-    <div style={{ display:"flex", flexDirection:"column", height:"calc(100vh - 120px)", gap:0 }}>
+  // ---- Filtros sidebar ----
+  const operariosFiltrados = operarios.filter(op => {
+    if (filtroEstado === "todos")    return true;
+    if (filtroEstado === "activos")  return ["INGRESO","RETORNO"].includes(op.ultima_marca);
+    if (filtroEstado === "almuerzo") return op.ultima_marca === "ALMUERZO";
+    if (filtroEstado === "cierre")   return op.ultima_marca === "CIERRE";
+    if (filtroEstado === "offline")  return isOffline(op.timestamp);
+    return true;
+  });
 
-      {/* CSS animations */}
+  const activos    = operarios.filter(o => ["INGRESO","RETORNO"].includes(o.ultima_marca));
+  const enAlmuerzo = operarios.filter(o => o.ultima_marca === "ALMUERZO");
+  const finalizados= operarios.filter(o => o.ultima_marca === "CIERRE");
+  const offlines   = operarios.filter(o => isOffline(o.timestamp));
+
+
+  // ============================================================
+  // RENDER - sidebar vertical izquierda + mapa fullheight derecha
+  // ============================================================
+  return (
+    <div style={{ display:"flex", height:"calc(100vh - 80px)", overflow:"hidden" }}>
+
       <style>{`
         @keyframes pulse-marker {
-          0%,100% { box-shadow: 0 2px 12px rgba(0,0,0,0.3); transform: scale(1); }
-          50% { box-shadow: 0 4px 24px rgba(0,0,0,0.5); transform: scale(1.08); }
+          0%,100%{ box-shadow:0 2px 12px rgba(0,0,0,0.3); transform:scale(1); }
+          50%    { box-shadow:0 4px 24px rgba(0,0,0,0.5); transform:scale(1.08); }
         }
-        .leaflet-popup-content-wrapper {
-          border-radius: 12px !important;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.15) !important;
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+        .leaflet-popup-content-wrapper{
+          border-radius:12px!important;
+          box-shadow:0 8px 32px rgba(0,0,0,0.15)!important;
         }
-        .leaflet-popup-tip { display:none; }
+        .leaflet-popup-tip{ display:none; }
+        .leaflet-container{ cursor:grab; }
+        .leaflet-container.leaflet-drag-target{ cursor:grabbing; }
+        .apex-sb::-webkit-scrollbar{ width:3px; }
+        .apex-sb::-webkit-scrollbar-thumb{ background:#DDE6EF; border-radius:4px; }
       `}</style>
 
-      {/* Modo vivo / historico */}
-      <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-        {[["vivo","EN VIVO","#06D6A0"],["historico","HISTORICO","#8B5CF6"]].map(([k,l,col])=>(
-          <div key={k} onClick={()=>{ setModoMapa(k); limpiarHistorico(); limpiarRecorrido(); setTimeout(()=>mapInstanceRef.current?.invalidateSize(),100); }}
-            style={{ padding:"7px 18px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,
-              background:modoMapa===k?col:C.bg, color:modoMapa===k?"#fff":C.muted,
-              border:`1px solid ${modoMapa===k?col:C.border}` }}>
-            {k==="vivo"&&<span style={{marginRight:5}}>&#9679;</span>}{l}
-          </div>
-        ))}
-      </div>
+      {/* ======================================================
+          SIDEBAR - panel izquierdo comprimido, fondo oscuro
+      ====================================================== */}
+      <div className="apex-sb" style={{
+        width: 196,
+        flexShrink: 0,
+        background: "#0D1B2A",
+        display: "flex",
+        flexDirection: "column",
+        overflowY: "auto",
+        overflowX: "hidden",
+        borderRight: "1px solid rgba(255,255,255,0.06)",
+      }}>
 
-      {/* Panel historico */}
-      {modoMapa==="historico" && (
-        <div style={{ background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14 }}>
-          <div style={{ fontSize:11,fontWeight:700,color:"#8B5CF6",marginBottom:10 }}>CONSULTA HISTORICA DE RECORRIDOS</div>
-          <div style={{ display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end" }}>
-            <div>
-              <div style={{ fontSize:10,fontWeight:700,color:C.muted,marginBottom:4 }}>FECHA</div>
-              <input type="date" value={histFecha} onChange={e=>setHistFecha(e.target.value)}
-                style={{ padding:"8px 12px",border:`1px solid ${C.border}`,borderRadius:8,fontSize:13 }}/>
-            </div>
-            <div>
-              <div style={{ fontSize:10,fontWeight:700,color:C.muted,marginBottom:4 }}>OPERARIO</div>
-              <select value={histNombre} onChange={e=>setHistNombre(e.target.value)}
-                style={{ padding:"8px 12px",border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,background:C.bg,minWidth:160 }}>
-                <option value="">Todos</option>
-                {personalGps.map(p=><option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={{ fontSize:10,fontWeight:700,color:C.muted,marginBottom:4 }}>VEHICULO</div>
-              <select value={histPlaca} onChange={e=>setHistPlaca(e.target.value)}
-                style={{ padding:"8px 12px",border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,background:C.bg,minWidth:130 }}>
-                <option value="">Todos</option>
-                {vehiculosGps.map(v=><option key={v.placa} value={v.placa}>{v.placa}</option>)}
-              </select>
-            </div>
-            <button onClick={buscarHistorico} disabled={histLoading}
-              style={{ padding:"9px 20px",borderRadius:8,background:"#8B5CF6",color:"#fff",border:"none",fontWeight:700,fontSize:12,cursor:"pointer" }}>
-              {histLoading?"BUSCANDO...":"BUSCAR"}
-            </button>
-            {histResultados.length>0 && (
-              <button onClick={limpiarHistorico}
-                style={{ padding:"9px 16px",borderRadius:8,background:C.bg,color:"#EF4444",border:`1px solid #EF444440`,fontWeight:700,fontSize:12,cursor:"pointer" }}>
-                LIMPIAR
-              </button>
-            )}
+        {/* Header sidebar */}
+        <div style={{ padding:"14px 12px 10px", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ fontSize:11, fontWeight:900, color:"#fff", letterSpacing:1 }}>MAPA GPS</div>
+          <div style={{ fontSize:9, color:"#4A90D9", letterSpacing:2, marginTop:1 }}>
+            {modoMapa === "vivo" ? "SEGUIMIENTO EN VIVO" : "HISTORICO DE RUTAS"}
           </div>
-          {histResultados.length>0 && (
-            <div style={{ marginTop:10,display:"flex",gap:8,flexWrap:"wrap" }}>
-              {histResultados.map((g,i)=>(
-                <div key={g.nombre} style={{ display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,
-                  background:COLORES_OP[i%COLORES_OP.length]+"15",border:`1px solid ${COLORES_OP[i%COLORES_OP.length]}40` }}>
-                  <div style={{ width:10,height:10,borderRadius:"50%",background:COLORES_OP[i%COLORES_OP.length] }}/>
-                  <span style={{ fontSize:11,fontWeight:700 }}>{g.nombre}</span>
-                  <span style={{ fontSize:10,color:C.muted }}>{g.marcaciones?.length||0} marcas</span>
+        </div>
+
+        {/* Tabs vivo / historico */}
+        <div style={{ display:"flex", padding:"8px 10px", gap:5,
+          borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+          {[["vivo","EN VIVO","#06D6A0"],["historico","HIST.","#8B5CF6"]].map(([k,l,col])=>(
+            <div key={k}
+              onClick={()=>{
+                setModoMapa(k);
+                limpiarHistorico();
+                limpiarRecorrido();
+                setSelOp(null);
+                setTimeout(()=>mapInstanceRef.current?.invalidateSize(),150);
+              }}
+              style={{ flex:1, padding:"5px 0", borderRadius:8, cursor:"pointer",
+                textAlign:"center", fontWeight:700, fontSize:10,
+                background: modoMapa===k ? col+"22" : "transparent",
+                color: modoMapa===k ? col : "#8892A4",
+                border: "1px solid "+(modoMapa===k ? col+"50" : "transparent"),
+                transition:"all 0.15s",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+              {k==="vivo" && (
+                <span style={{
+                  display:"inline-block", width:5, height:5, borderRadius:"50%",
+                  background: modoMapa===k ? "#06D6A0" : "#8892A4",
+                  animation: modoMapa===k ? "blink 2s infinite" : "none",
+                  flexShrink:0
+                }}/>
+              )}
+              {l}
+            </div>
+          ))}
+        </div>
+
+        {/* ---- MODO VIVO ---- */}
+        {modoMapa === "vivo" && (<>
+
+          {/* KPIs */}
+          <div style={{ padding:"8px 10px",
+            borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5 }}>
+              {[
+                { label:"ACTIVOS",  val:activos.length,    color:"#06D6A0", id:"activos"  },
+                { label:"ALMUERZO", val:enAlmuerzo.length, color:"#F59E0B", id:"almuerzo" },
+                { label:"CIERRE",   val:finalizados.length,color:"#8B5CF6", id:"cierre"   },
+                { label:"OFFLINE",  val:offlines.length,   color:"#EF4444", id:"offline"  },
+              ].map(k=>(
+                <div key={k.id}
+                  onClick={()=>setFiltroEstado(filtroEstado===k.id?"todos":k.id)}
+                  style={{ padding:"7px 6px", borderRadius:8, cursor:"pointer",
+                    background: filtroEstado===k.id ? k.color+"22" : "rgba(255,255,255,0.04)",
+                    border:"1px solid "+(filtroEstado===k.id ? k.color+"60" : "transparent"),
+                    textAlign:"center", transition:"all 0.15s" }}>
+                  <div style={{ fontSize:18, fontWeight:900, color:k.color,
+                    lineHeight:1 }}>{k.val}</div>
+                  <div style={{ fontSize:8, fontWeight:700, color:k.color+"AA",
+                    letterSpacing:0.5, marginTop:2 }}>{k.label}</div>
+                </div>
+              ))}
+            </div>
+            {/* Total + tiempo */}
+            <div style={{ marginTop:6, display:"flex", justifyContent:"space-between",
+              alignItems:"center", padding:"4px 2px" }}>
+              <span style={{ fontSize:9, color:"#8892A4" }}>
+                Total rastreados:
+                {" "}<strong style={{ color:"#00B4D8" }}>{operarios.length}</strong>
+              </span>
+              {lastUpdate && (
+                <span style={{ fontSize:9, color:"#8892A4" }}>
+                  {lastUpdate.toLocaleTimeString("es-CO",{hour:"2-digit",minute:"2-digit"})}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Controles refresh + GPS */}
+          <div style={{ padding:"7px 10px",
+            borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
+              <div style={{ width:6, height:6, borderRadius:"50%", flexShrink:0,
+                background: gpsActivo ? "#06D6A0" : "#EF4444",
+                boxShadow: gpsActivo ? "0 0 5px #06D6A0" : "none",
+                animation: gpsActivo ? "blink 2s infinite" : "none" }}/>
+              <span style={{ fontSize:9, color:"#8892A4", flex:1 }}>
+                {gpsActivo ? "GPS activo" : "GPS inactivo"}
+              </span>
+            </div>
+            <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+              <select value={refreshInterval}
+                onChange={e=>setRefreshInterval(Number(e.target.value))}
+                style={{ flex:1, padding:"4px 6px", borderRadius:6,
+                  border:"1px solid rgba(255,255,255,0.1)",
+                  background:"rgba(255,255,255,0.06)", color:"#fff",
+                  fontSize:10, fontWeight:700, cursor:"pointer" }}>
+                <option value={30}>30s</option>
+                <option value={60}>1 min</option>
+                <option value={120}>2 min</option>
+                <option value={300}>5 min</option>
+              </select>
+              <button onClick={cargarOperarios}
+                style={{ padding:"4px 8px", borderRadius:6,
+                  border:"1px solid rgba(255,255,255,0.12)",
+                  background:"rgba(255,255,255,0.06)", color:"#fff",
+                  fontSize:9, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                {loading ? "..." : "UPDATE"}
+              </button>
+            </div>
+          </div>
+
+          {/* Alerta offline */}
+          {offlines.length > 0 && (
+            <div style={{ margin:"6px 10px", padding:"6px 8px", borderRadius:8,
+              background:"#F59E0B14", border:"1px solid #F59E0B40" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3 }}>
+                <div style={{ width:6, height:6, borderRadius:"50%",
+                  background:"#F59E0B", flexShrink:0 }}/>
+                <span style={{ fontSize:9, fontWeight:700, color:"#F59E0B" }}>
+                  {offlines.length} SIN SENAL
+                </span>
+              </div>
+              {offlines.map(o=>(
+                <div key={o.username} style={{ fontSize:9, color:"#F59E0BAA",
+                  paddingLeft:11, lineHeight:1.4 }}>
+                  {o.nombre||o.username}
                 </div>
               ))}
             </div>
           )}
-          {histResultados.length===0 && !histLoading && (
-            <div style={{ marginTop:8,fontSize:12,color:C.muted }}>Selecciona fecha y filtros, luego presiona Buscar.</div>
-          )}
-        </div>
-      )}
 
-      {/* KPI Bar - solo en vivo */}
-      {modoMapa==="vivo" && (<div style={{
-        display:"flex", gap:12, padding:"12px 0", marginBottom:12, flexWrap:"wrap"
-      }}>
-        {[
-          { label:"EN CAMPO", val:activos.length, color:"#06D6A0", icon:"[act]" },
-          { label:"ALMUERZO", val:enAlmuerzo.length, color:"#F59E0B", icon:"[alm]" },
-          { label:"FINALIZADO", val:finalizados.length, color:"#8B5CF6", icon:"[fin]" },
-          { label:"RASTREADOS", val:operarios.length, color:"#00B4D8", icon:"[tot]" },
-        ].map(k => (
-          <div key={k.label} style={{
-            flex:1, minWidth:100, padding:"10px 16px", borderRadius:10,
-            background:`${k.color}10`, border:`1px solid ${k.color}30`,
-            display:"flex", alignItems:"center", gap:10
-          }}>
-            <div style={{ fontSize:24, fontWeight:900, color:k.color }}>{k.val}</div>
-            <div style={{ fontSize:10, fontWeight:700, color:k.color, lineHeight:1.3 }}>{k.label}</div>
-          </div>
-        ))}
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{
-            width:10, height:10, borderRadius:"50%",
-            background: gpsActivo ? "#06D6A0" : "#EF4444",
-            boxShadow: gpsActivo ? "0 0 8px #06D6A0" : "none"
-          }}/>
-          <span style={{ fontSize:11, color:C.muted }}>
-            {gpsActivo ? "Tu GPS activo" : gpsError || "GPS inactivo"}
-          </span>
-          {lastUpdate && (
-            <span style={{ fontSize:10, color:C.muted }}>
-              - Act: {lastUpdate.toLocaleTimeString()}
-            </span>
-          )}
-          <button onClick={cargarOperarios}
-            style={{ padding:"6px 12px", borderRadius:8, border:`1px solid ${C.border}`,
-              background:C.bg, fontSize:11, cursor:"pointer", fontWeight:600 }}>
-            {loading ? "..." : "ACTUALIZAR"}
-          </button>
-        </div>
-      </div>)}
-
-      {/* Main content: sidebar + map */}
-      <div style={{ display:"flex", gap:14, flex:1, minHeight:0 }}>
-
-        {/* Sidebar operarios */}
-        <div style={{
-          width:260, flexShrink:0, display:"flex", flexDirection:"column", gap:8,
-          overflowY:"auto", paddingRight:4
-        }}>
-          {operarios.length === 0 && !loading && (
-            <div style={{ textAlign:"center", padding:40, color:C.muted }}>
-              <div style={{ fontSize:32, marginBottom:8 }}></div>
-              <div style={{ fontSize:13 }}>Sin operarios rastreados hoy</div>
-              <div style={{ fontSize:11, marginTop:4 }}>Los operarios deben tener GPS activo en su navegador</div>
-            </div>
-          )}
-          {operarios.map(op => {
-            const cfg = estadoConfig[op.ultima_marca] || estadoConfig["SIN MARCAR"];
-            const mins = op.timestamp ? Math.floor((Date.now() - new Date(op.timestamp)) / 60000) : null;
-            const isSelected = selOp?.username === op.username;
-            return (
-              <div key={op.username}
-                onClick={() => {
-                  setSelOp(op);
-                  const map = mapInstanceRef.current;
-                  const marker = markersRef.current[op.username];
-                  if (map && marker) { map.setView([op.lat, op.lng], 16); marker.openPopup(); }
-                }}
-                style={{
-                  padding:"12px 14px", borderRadius:10, cursor:"pointer",
-                  background: isSelected ? cfg.color+"15" : C.card,
-                  border:`1px solid ${isSelected ? cfg.color : C.border}`,
-                  transition:"all 0.2s"
-                }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                  <div style={{
-                    width:38, height:38, borderRadius:"50%", flexShrink:0,
-                    background:cfg.color+"20", border:`2px solid ${cfg.color}`,
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    fontWeight:900, fontSize:12, color:cfg.color
-                  }}>
-                    {(op.nombre||"??").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                      {op.nombre || op.username}
-                    </div>
-                    <div style={{ fontSize:10, fontWeight:700, color:cfg.color }}>{cfg.label}</div>
-                  </div>
-                  <div style={{
-                    width:8, height:8, borderRadius:"50%", background:cfg.color, flexShrink:0,
-                    boxShadow: cfg.pulse ? `0 0 6px ${cfg.color}` : "none"
-                  }}/>
+          {/* Filtros rapidos */}
+          <div style={{ padding:"6px 10px 4px",
+            borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+              {[
+                {id:"todos",    label:"Todos"   },
+                {id:"activos",  label:"Activos" },
+                {id:"almuerzo", label:"Almuerzo"},
+                {id:"offline",  label:"Offline" },
+              ].map(f=>(
+                <div key={f.id} onClick={()=>setFiltroEstado(f.id)}
+                  style={{ padding:"3px 7px", borderRadius:20, cursor:"pointer",
+                    fontSize:9, fontWeight:700, transition:"all 0.12s",
+                    background: filtroEstado===f.id ? "#00B4D8" : "rgba(255,255,255,0.07)",
+                    color: filtroEstado===f.id ? "#fff" : "#8892A4",
+                    border:"none" }}>
+                  {f.label}
                 </div>
-                {mins !== null && (
-                  <div style={{ fontSize:10, color:C.muted, marginTop:6, paddingLeft:48 }}>
-                    Hace {mins < 1 ? "menos de 1 min" : `${mins} min`}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Mapa */}
-        <div style={{ flex:1, borderRadius:14, overflow:"hidden", border:`1px solid ${C.border}`,
-          position:"relative", minHeight:400 }}>
-          <div ref={mapRef} style={{ width:"100%", height:"100%" }} />
-          {operarios.length === 0 && (
-            <div style={{
-              position:"absolute", inset:0, display:"flex", flexDirection:"column",
-              alignItems:"center", justifyContent:"center",
-              background:"rgba(13,27,42,0.7)", color:"white", borderRadius:14
-            }}>
-              <div style={{ fontSize:48, marginBottom:12 }}></div>
-              <div style={{ fontSize:16, fontWeight:700 }}>Sin senales GPS activas</div>
-              <div style={{ fontSize:12, opacity:0.7, marginTop:4 }}>
-                Esperando que los operarios activen su ubicacion
-              </div>
+              ))}
             </div>
-          )}
-        </div>
+          </div>
+
+          {/* Lista operarios */}
+          <div style={{ flex:1, padding:"6px 8px", display:"flex",
+            flexDirection:"column", gap:4 }}>
+            {operariosFiltrados.length === 0 && !loading && (
+              <div style={{ textAlign:"center", padding:"20px 0", color:"#8892A4" }}>
+                <div style={{ fontSize:20, opacity:0.25, marginBottom:6 }}>[ ]</div>
+                <div style={{ fontSize:10, fontWeight:700 }}>Sin operarios</div>
+                <div style={{ fontSize:9, marginTop:2, opacity:0.6 }}>GPS no activo</div>
+              </div>
+            )}
+            {operariosFiltrados.map(op=>{
+              const cfg     = ESTADO_CONFIG[op.ultima_marca]||ESTADO_CONFIG["SIN MARCAR"];
+              const mins    = getMinutosDesdeUpdate(op.timestamp);
+              const offline = isOffline(op.timestamp);
+              const isSel   = selOp?.username === op.username;
+              const dotCol  = offline ? "#F59E0B" : cfg.color;
+              return (
+                <div key={op.username}
+                  onClick={()=>{
+                    setSelOp(op);
+                    const map    = mapInstanceRef.current;
+                    const marker = markersRef.current[op.username];
+                    if(map && marker){ map.setView([op.lat,op.lng],16); marker.openPopup(); }
+                  }}
+                  style={{ padding:"8px 10px", borderRadius:10, cursor:"pointer",
+                    background: isSel ? dotCol+"20" : "rgba(255,255,255,0.04)",
+                    border:"1px solid "+(isSel ? dotCol+"60" : "rgba(255,255,255,0.07)"),
+                    transition:"all 0.15s" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                    {/* Avatar */}
+                    <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
+                      background:dotCol+"25", border:"2px solid "+dotCol+"80",
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      fontWeight:900, fontSize:9, color:dotCol }}>
+                      {(op.nombre||"??").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:"#fff",
+                        whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                        {op.nombre||op.username}
+                      </div>
+                      <div style={{ fontSize:9, fontWeight:600, color:dotCol }}>
+                        {offline ? "OFFLINE" : cfg.label}
+                      </div>
+                    </div>
+                    <div style={{ width:6, height:6, borderRadius:"50%", flexShrink:0,
+                      background:dotCol,
+                      boxShadow: cfg.pulse&&!offline ? "0 0 5px "+dotCol : "none" }}/>
+                  </div>
+                  {mins !== null && (
+                    <div style={{ fontSize:8, color: offline?"#F59E0B80":"#8892A4",
+                      marginTop:3, paddingLeft:35 }}>
+                      {mins<1 ? "Ahora mismo" : "Hace "+mins+" min"}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>)}
+
+        {/* ---- MODO HISTORICO ---- */}
+        {modoMapa === "historico" && (
+          <div style={{ padding:"10px", display:"flex", flexDirection:"column", gap:8, flex:1 }}>
+            <div style={{ fontSize:9, fontWeight:700, color:"#8B5CF6AA",
+              letterSpacing:1 }}>CONSULTA HISTORICA</div>
+
+            {/* Fecha */}
+            <div>
+              <div style={{ fontSize:9, color:"#8892A4", marginBottom:3 }}>FECHA</div>
+              <input type="date" value={histFecha} onChange={e=>setHistFecha(e.target.value)}
+                style={{ width:"100%", padding:"6px 8px",
+                  border:"1px solid rgba(255,255,255,0.12)",
+                  borderRadius:6, fontSize:11, background:"rgba(255,255,255,0.06)",
+                  color:"#fff", boxSizing:"border-box" }}/>
+            </div>
+
+            {/* Operario */}
+            <div>
+              <div style={{ fontSize:9, color:"#8892A4", marginBottom:3 }}>OPERARIO</div>
+              <select value={histNombre} onChange={e=>setHistNombre(e.target.value)}
+                style={{ width:"100%", padding:"6px 8px",
+                  border:"1px solid rgba(255,255,255,0.12)",
+                  borderRadius:6, fontSize:11, background:"#0D1B2A",
+                  color:"#fff", boxSizing:"border-box" }}>
+                <option value="">Todos</option>
+                {personalGps.map(p=><option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+              </select>
+            </div>
+
+            {/* Vehiculo */}
+            <div>
+              <div style={{ fontSize:9, color:"#8892A4", marginBottom:3 }}>VEHICULO</div>
+              <select value={histPlaca} onChange={e=>setHistPlaca(e.target.value)}
+                style={{ width:"100%", padding:"6px 8px",
+                  border:"1px solid rgba(255,255,255,0.12)",
+                  borderRadius:6, fontSize:11, background:"#0D1B2A",
+                  color:"#fff", boxSizing:"border-box" }}>
+                <option value="">Todos</option>
+                {vehiculosGps.map(v=><option key={v.placa} value={v.placa}>{v.placa}</option>)}
+              </select>
+            </div>
+
+            {/* Botones */}
+            <div style={{ display:"flex", gap:5 }}>
+              <button onClick={buscarHistorico} disabled={histLoading}
+                style={{ flex:1, padding:"7px 0", borderRadius:8,
+                  background:"#8B5CF6", color:"#fff",
+                  border:"none", fontWeight:700, fontSize:10, cursor:"pointer" }}>
+                {histLoading ? "..." : "BUSCAR"}
+              </button>
+              {histResultados.length>0 && (
+                <button onClick={limpiarHistorico}
+                  style={{ padding:"7px 10px", borderRadius:8,
+                    background:"rgba(239,68,68,0.12)", color:"#EF4444",
+                    border:"1px solid #EF444440", fontWeight:700,
+                    fontSize:10, cursor:"pointer" }}>
+                  X
+                </button>
+              )}
+            </div>
+
+            {/* Leyenda resultados */}
+            {histResultados.map((g,i)=>(
+              <div key={g.nombre} style={{ display:"flex", alignItems:"center", gap:6,
+                padding:"5px 8px", borderRadius:8,
+                background:COLORES_OP[i%COLORES_OP.length]+"18",
+                border:"1px solid "+COLORES_OP[i%COLORES_OP.length]+"40" }}>
+                <div style={{ width:7, height:7, borderRadius:"50%", flexShrink:0,
+                  background:COLORES_OP[i%COLORES_OP.length] }}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:10, fontWeight:700, color:"#fff",
+                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                    {g.nombre}
+                  </div>
+                  <div style={{ fontSize:8, color:"#8892A4" }}>
+                    {g.marcaciones?.length||0} puntos GPS
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {histResultados.length===0 && !histLoading && (
+              <div style={{ fontSize:10, color:"#8892A4", textAlign:"center",
+                marginTop:8, lineHeight:1.5 }}>
+                Selecciona filtros y presiona Buscar
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ======================================================
+          MAPA - ocupa todo el espacio restante
+      ====================================================== */}
+      <div style={{ flex:1, position:"relative", overflow:"hidden", minWidth:0 }}>
+        <div ref={mapRef} style={{ width:"100%", height:"100%" }} />
+
+        {/* Panel detalle operario flotante */}
+        {selOp && modoMapa === "vivo" && (
+          <PanelDetalle
+            op={selOp}
+            onCerrar={()=>setSelOp(null)}
+            onVerRecorrido={(op)=>{ verRecorridoOperario(op); setSelOp(null); }}
+          />
+        )}
+
+        {/* Overlay vacio */}
+        {operarios.length === 0 && (
+          <div style={{ position:"absolute", inset:0, display:"flex",
+            flexDirection:"column", alignItems:"center", justifyContent:"center",
+            background:"rgba(240,244,248,0.82)", pointerEvents:"none" }}>
+            <div style={{ fontSize:40, marginBottom:10, opacity:0.18 }}>[ ]</div>
+            <div style={{ fontSize:15, fontWeight:700, color:"#0D1B2A" }}>
+              Sin senales GPS activas
+            </div>
+            <div style={{ fontSize:11, color:"#6B7A8D", marginTop:4 }}>
+              Esperando ubicacion de los operarios
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
