@@ -318,8 +318,8 @@ const Horarios = ({ onBack, user }) => {
   const [marcForm, setMarcForm] = useState({
     usuario: nombreUsuario || (user?.nombre || user?.username || ""),
     vehiculo_placa: "",
-    ruta_id: "",
-    novedad_tipo_id: "",
+    ruta_id: null,
+    novedad_tipo_id: null,
     novedad_descripcion: "",
   });
   const [resultMarca,    setResultMarca]    = useState(null);
@@ -342,6 +342,7 @@ const Horarios = ({ onBack, user }) => {
 
   const [monitorRutas,     setMonitorRutas]     = useState([]);
   const [monitorFecha,     setMonitorFecha]      = useState(new Date().toISOString().split("T")[0]);
+  const [monitorLoading,   setMonitorLoading]    = useState(false);
   const [justifPendientes, setJustifPendientes]  = useState([]);
 
   const marcaHabilitada = (tipo) => {
@@ -369,26 +370,48 @@ const Horarios = ({ onBack, user }) => {
       .then(r=>r.json())
       .then(d => {
         const todas = Array.isArray(d) ? d : [];
-        const nombreUser = nombreUsuario.toLowerCase();
+        const nombreUser    = nombreUsuario.toLowerCase();
+        const usernameActual = (user?.username || "").trim().toLowerCase();
         const mias = todas.filter(r => {
           const equipo = r.equipo || r.empleados || [];
-          return equipo.some(e => (e || "").trim().toLowerCase() === nombreUser);
+          return equipo.some(e => {
+            const ev = (e || "").trim().toLowerCase();
+            return ev === nombreUser || ev === usernameActual;
+          });
         });
         setRutasUsuario(mias);
         if (mias.length === 1) {
-          setMarcForm(f => ({
-            ...f,
+          setMarcForm(prev => ({
+            ...prev,
             vehiculo_placa: mias[0].placa || "",
-            ruta_id: mias[0].id || "",
+            ruta_id: mias[0].id ? String(mias[0].id) : null,
           }));
         } else if (mias.length === 0) {
-          setMarcForm(f => ({ ...f, vehiculo_placa: "", ruta_id: "" }));
+          setMarcForm(prev => ({ ...prev, vehiculo_placa: "", ruta_id: null }));
         }
       })
       .catch(()=>{});
   };
 
   useEffect(() => { cargarRutasUsuario(); }, [nombreUsuario]);
+
+  useEffect(() => {
+    if (vista !== "marcacion") return;
+    if (!gpsCoordsActual) return;
+    const iv = setInterval(() => {
+      if (!gpsCoordsActual) return;
+      fetch(API_URL + "/gps/ping", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: (user?.username || "").trim(),
+          nombre:   (user?.nombre || user?.username || nombreUsuario || "").trim(),
+          lat: gpsCoordsActual.lat, lng: gpsCoordsActual.lon,
+          precision: gpsCoordsActual.precision,
+        }),
+      }).catch(()=>{});
+    }, 120000);
+    return () => clearInterval(iv);
+  }, [vista, gpsCoordsActual]);
 
   // Cargar ultima marcacion del usuario - funcion reutilizable
   const cargarUltimaMarca = () => {
@@ -399,10 +422,11 @@ const Horarios = ({ onBack, user }) => {
       .then(r=>r.json())
       .then(d => {
         const registros = Array.isArray(d) ? d : [];
-        // Filtrar solo del usuario actual por si el backend no filtro bien
-        const mios = registros.filter(r =>
-          (r.usuario || "").trim().toLowerCase() === nombreUsuario.toLowerCase()
-        );
+        const usernameLocal = (user?.username || "").trim().toLowerCase();
+        const mios = registros.filter(r => {
+          const ru = (r.usuario || "").trim().toLowerCase();
+          return ru === nombreUsuario.toLowerCase() || ru === usernameLocal;
+        });
         if (mios.length > 0) {
           // El ultimo en el array (ORDER BY id ASC) es el mas reciente
           const ultima = mios[mios.length - 1];
@@ -418,7 +442,6 @@ const Horarios = ({ onBack, user }) => {
   useEffect(() => { cargarUltimaMarca(); }, [nombreUsuario]);
 
   // ---- GPS OBLIGATORIO ----
-  // Precision aceptable en metros - por debajo de este valor se considera buena
   const GPS_PRECISION_OK = 80;
 
   const obtenerGPS = () => new Promise((res) => {
@@ -427,68 +450,39 @@ const Horarios = ({ onBack, user }) => {
       setGpsEstado("error");
       return res(null);
     }
-
-    // FASE 1: lectura rapida sin cache (maximumAge:0)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const coords = {
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-          precision: pos.coords.accuracy,
-        };
+        const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude, precision: pos.coords.accuracy };
         setGpsCoordsActual(coords);
-
-        // Si la precision ya es buena, usar directamente
         if (coords.precision <= GPS_PRECISION_OK) {
           setGpsEstado("ok");
           res(coords);
           return;
         }
-
-        // FASE 2: precision insuficiente, refinar con watchPosition
         setGpsEstado("refinando");
-        let mejorCoords = coords;
+        let mejor = coords;
         let watchId = null;
-        let resuelto = false;
-
-        const terminar = (coordsFinal) => {
-          if (resuelto) return;
-          resuelto = true;
+        let done = false;
+        const finish = (cf) => {
+          if (done) return;
+          done = true;
           if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-          setGpsCoordsActual(coordsFinal);
+          setGpsCoordsActual(cf);
           setGpsEstado("ok");
-          res(coordsFinal);
+          res(cf);
         };
-
-        // Timeout maximo de 8s para la fase 2
-        const timeout = setTimeout(() => terminar(mejorCoords), 8000);
-
+        const tOut = setTimeout(() => finish(mejor), 8000);
         watchId = navigator.geolocation.watchPosition(
-          (pos2) => {
-            const c2 = {
-              lat: pos2.coords.latitude,
-              lon: pos2.coords.longitude,
-              precision: pos2.coords.accuracy,
-            };
-            // Guardar si es mejor que lo que teniamos
-            if (c2.precision < mejorCoords.precision) {
-              mejorCoords = c2;
-              setGpsCoordsActual(c2);
-            }
-            // Si alcanzamos precision buena, terminar ya
-            if (c2.precision <= GPS_PRECISION_OK) {
-              clearTimeout(timeout);
-              terminar(mejorCoords);
-            }
+          (p2) => {
+            const c2 = { lat: p2.coords.latitude, lon: p2.coords.longitude, precision: p2.coords.accuracy };
+            if (c2.precision < mejor.precision) { mejor = c2; setGpsCoordsActual(c2); }
+            if (c2.precision <= GPS_PRECISION_OK) { clearTimeout(tOut); finish(mejor); }
           },
-          () => { clearTimeout(timeout); terminar(mejorCoords); },
+          () => { clearTimeout(tOut); finish(mejor); },
           { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
         );
       },
-      () => {
-        setGpsEstado("error");
-        res(null);
-      },
+      () => { setGpsEstado("error"); res(null); },
       { timeout: 6000, maximumAge: 0, enableHighAccuracy: true }
     );
   });
@@ -518,39 +512,50 @@ const Horarios = ({ onBack, user }) => {
       return;
     }
     const payload = {
-      ...marcForm,
-      tipo_marca: tipo,
-      latitud: gps.lat,
-      longitud: gps.lon,
+      usuario:             (marcForm.usuario || "").trim(),
+      vehiculo_placa:      marcForm.vehiculo_placa || "",
+      ruta_id:             marcForm.ruta_id || null,
+      novedad_tipo_id:     marcForm.novedad_tipo_id || null,
+      novedad_descripcion: marcForm.novedad_descripcion || "",
+      tipo_marca:          tipo,
+      latitud:             gps.lat,
+      longitud:            gps.lon,
     };
     try {
-      const r    = await fetch(API_URL + "/marcaciones", {
+      const r = await fetch(API_URL + "/marcaciones", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await r.json();
+      if (!r.ok) {
+        setMsg({ tipo: "error", texto: "Error " + r.status + ": " + (data.detail || "Error del servidor") });
+        setLoading(false);
+        return;
+      }
       const hora = new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
       setResultMarca({ ...data, tipo, gps, hora });
       setUltimaMarca(tipo);
-      // Ping GPS inmediato para que el mapa y monitor se actualicen al instante
       fetch(API_URL + "/gps/ping", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: user?.username || user?.user || marcForm.usuario,
-          nombre: marcForm.usuario,
+          username: (user?.username || "").trim(),
+          nombre:   (user?.nombre || user?.username || marcForm.usuario || "").trim(),
           lat: gps.lat, lng: gps.lon, precision: gps.precision,
         }),
       }).catch(()=>{});
-      // Recargar estado de jornada
-      cargarUltimaMarca();
+      setTimeout(() => cargarUltimaMarca(), 800);
+      if (tipo === "CIERRE") {
+        setGpsEstado("idle");
+        setGpsCoordsActual(null);
+      }
       if (data.alerta && data.minutos_extra > 0) {
         setPendJustif({ tipo, minutos_extra: data.minutos_extra, gps });
         setShowJustif(true);
       } else {
-        setMsg({ tipo: "success", texto: MARCAS_CFG[tipo].label + " registrado correctamente a las " + hora });
+        setMsg({ tipo: "success", texto: MARCAS_CFG[tipo].label + " registrado a las " + hora });
       }
-    } catch {
-      setMsg({ tipo: "error", texto: "Error al registrar. Intenta de nuevo." });
+    } catch (err) {
+      setMsg({ tipo: "error", texto: "Error de red. Verifica tu conexion." });
     }
     setLoading(false);
   };
@@ -625,10 +630,31 @@ const Horarios = ({ onBack, user }) => {
       .catch(()=>{});
   };
 
+  const cargarMonitorConLoading = () => {
+    setMonitorLoading(true);
+    fetch(API_URL + "/monitor/rutas?fecha=" + monitorFecha)
+      .then(r => r.json())
+      .then(d => {
+        const lista = Array.isArray(d) ? d : [];
+        setMonitorRutas(lista);
+        const pend = [];
+        lista.forEach(ruta => {
+          (ruta.empleados || []).forEach(emp => {
+            if (emp.es_extra && emp.ultima_marca === "CIERRE") {
+              pend.push({ ...emp, placa: ruta.placa, ruta_id: ruta.id });
+            }
+          });
+        });
+        setJustifPendientes(pend);
+      })
+      .catch(() => {})
+      .finally(() => setMonitorLoading(false));
+  };
+
   useEffect(() => {
     if (vista !== "monitor") return;
-    cargarMonitor();
-    const iv = setInterval(cargarMonitor, 60000);
+    cargarMonitorConLoading();
+    const iv = setInterval(cargarMonitorConLoading, 15000);
     return () => clearInterval(iv);
   }, [vista, monitorFecha]);
 
@@ -669,9 +695,11 @@ const Horarios = ({ onBack, user }) => {
           onChange={e => setMonitorFecha(e.target.value)}
           style={{ padding: "9px 12px", border: "1px solid " + C.border,
             borderRadius: 8, fontSize: 13, background: C.card }} />
-        <Btn onClick={cargarMonitor}>ACTUALIZAR</Btn>
+        <Btn onClick={cargarMonitorConLoading} disabled={monitorLoading}>
+          {monitorLoading ? "ACTUALIZANDO..." : "ACTUALIZAR"}
+        </Btn>
         <span style={{ fontSize: 12, color: C.muted }}>
-          {monitorRutas.length} ruta(s) - Auto-actualiza cada 60s
+          {monitorRutas.length} ruta(s) - Auto-actualiza cada 15s
         </span>
       </div>
 
@@ -845,11 +873,11 @@ const Horarios = ({ onBack, user }) => {
       )}
 
       <PageHeader title="Marcacion de Personal"
-        subtitle="Registra tu jornada laboral" onBack={() => { setVista("menu"); cargarUltimaMarca(); }} />
+        subtitle="Registra tu jornada laboral" onBack={() => { setVista("menu"); setGpsEstado("idle"); setGpsCoordsActual(null); cargarUltimaMarca(); }} />
       {msg && <Alert tipo={msg.tipo} texto={msg.texto} onClose={() => setMsg(null)} />}
 
-      {/* Banner GPS obligatorio */}
-      <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 16,
+      {/* Banner GPS - solo visible si la jornada no esta cerrada */}
+      {ultimaMarca !== "CIERRE" && <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 16,
         background: gpsEstado === "ok" ? "#06D6A010"
           : gpsEstado === "error" ? "#EF444410"
           : gpsEstado === "refinando" ? "#F59E0B10" : "#00B4D810",
@@ -881,7 +909,7 @@ const Horarios = ({ onBack, user }) => {
             Ver ubicacion
           </span>
         )}
-      </div>
+      </div>}
 
       <Card style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 700, marginBottom: 12, fontSize: 11,
@@ -929,8 +957,8 @@ const Horarios = ({ onBack, user }) => {
                 const seleccionada = marcForm.vehiculo_placa === r.placa;
                 return (
                   <div key={r.placa}
-                    onClick={() => setMarcForm(f => ({
-                      ...f, vehiculo_placa: r.placa, ruta_id: r.id || ""
+                    onClick={() => setMarcForm(prev => ({
+                      ...prev, vehiculo_placa: r.placa, ruta_id: r.id ? String(r.id) : null
                     }))}
                     style={{ padding: "8px 14px", borderRadius: 10, cursor: "pointer",
                       fontSize: 12, fontWeight: 700, transition: "all 0.15s",
@@ -1134,7 +1162,7 @@ const Horarios = ({ onBack, user }) => {
   if (vista === "planeacion") return (
     <div>
       <PageHeader title="Planeacion de Rutas" subtitle="Crear y asignar rutas del dia"
-        onBack={() => { setVista("menu"); cargarUltimaMarca(); }} />
+        onBack={() => { setVista("menu"); setGpsEstado("idle"); setGpsCoordsActual(null); cargarUltimaMarca(); }} />
       {msg && <Alert tipo={msg.tipo} texto={msg.texto} onClose={() => setMsg(null)} />}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 11,

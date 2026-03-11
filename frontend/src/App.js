@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { API_URL, C } from "./shared/constants";
-import { Layout, Login } from "./shared/ui";
+import { Login } from "./shared/ui";
+import Layout from "./components/Layout_Colapsable";
 import Dashboard     from "./components/Dashboard";
 import Personal      from "./components/Personal";
 import Horarios      from "./components/Horarios";
