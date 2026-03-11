@@ -876,95 +876,162 @@ def crear_ruta_v2(p: RutaCreate):
 # ============================================================
 @app.get("/monitor/rutas")
 def monitor_rutas(fecha: Optional[str] = None):
+    conn = None
     try:
         conn = get_conn()
         cur = conn.cursor()
         f = fecha or datetime.now().strftime("%Y-%m-%d")
 
+        # QUERY 1: todas las rutas del dia (1 roundtrip)
         cur.execute("""
             SELECT id, vehiculo_placa, empleados_json, hora_inicio_prog, hora_fin_prog,
                    viaticos, estado, hora_inicio_real, hora_fin_real, tolerancia_minutos
             FROM planeacion_rutas WHERE fecha::text = %s ORDER BY hora_inicio_prog
         """, (f,))
         rutas = cur.fetchall()
-        resultado = []
+        if not rutas:
+            return []
 
+        # Recopilar todos los empleados y placas de todas las rutas
+        todos_empleados = set()
+        todas_placas    = set()
+        todas_ruta_ids  = set()
+        rutas_data = []
         for r in rutas:
-            ruta_id = r[0]
-            placa = r[1]
             try:
                 empleados = json.loads(r[2]) if r[2] else []
-            except:
+            except Exception:
                 empleados = []
-
-            # Obtener ultima marcacion de cada empleado en esta ruta
-            marcaciones_empleados = []
+            rutas_data.append((r, empleados))
             for emp in empleados:
-                # Obtener TODAS las marcaciones del dia para este empleado
-            # Obtener TODAS las marcaciones del dia para este empleado en esta ruta
-                cur.execute("""
-                    SELECT tipo_marca, hora, latitud, longitud, es_extra, minutos_extra
-                    FROM asistencia
-                    WHERE usuario = %s AND fecha::text = %s
-                      AND (ruta_id = %s OR vehiculo_placa = %s)
-                    ORDER BY id ASC
-                """, (emp, f, ruta_id, placa))
-                todas_marcas = cur.fetchall()
-                ultima = todas_marcas[-1] if todas_marcas else None
+                todos_empleados.add(emp.strip())
+            todas_placas.add(r[1])
+            todas_ruta_ids.add(r[0])
 
-                # Calcular tiempo en ruta desde primer INGRESO
+        # QUERY 2: resolver nombre/username de todos los empleados a la vez (1 roundtrip)
+        emp_list = list(todos_empleados)
+        nombre_map = {}  # emp -> (nombre_real, username)
+        if emp_list:
+            cur.execute("""
+                SELECT COALESCE(nombre, username), COALESCE(username, nombre)
+                FROM usuarios
+                WHERE nombre = ANY(%s) OR username = ANY(%s)
+            """, (emp_list, emp_list))
+            for row in cur.fetchall():
+                nombre_map[row[0]] = (row[0], row[1])
+                nombre_map[row[1]] = (row[0], row[1])
+
+        # QUERY 3: TODAS las marcaciones del dia para todos los empleados (1 roundtrip)
+        placas_list  = list(todas_placas)
+        ruta_ids_list = list(todas_ruta_ids)
+
+        # Expandir candidatos con nombres y usernames resueltos
+        candidatos_todos = set()
+        for emp in emp_list:
+            candidatos_todos.add(emp)
+            if emp in nombre_map:
+                candidatos_todos.add(nombre_map[emp][0])
+                candidatos_todos.add(nombre_map[emp][1])
+        candidatos_list = list(candidatos_todos)
+
+        marcaciones_bd = {}  # usuario_lower -> [marcas]
+        if candidatos_list:
+            cur.execute("""
+                SELECT usuario, tipo_marca, hora, latitud, longitud, es_extra, minutos_extra,
+                       ruta_id, vehiculo_placa
+                FROM asistencia
+                WHERE fecha::text = %s
+                  AND (usuario = ANY(%s)
+                       OR ruta_id = ANY(%s)
+                       OR vehiculo_placa = ANY(%s))
+                ORDER BY id ASC
+            """, (f, candidatos_list, ruta_ids_list, placas_list))
+            for row in cur.fetchall():
+                key = (row[0] or "").strip().lower()
+                if key not in marcaciones_bd:
+                    marcaciones_bd[key] = []
+                marcaciones_bd[key].append(row)
+
+        ahora_min = datetime.now().hour * 60 + datetime.now().minute
+        resultado = []
+
+        for (r, empleados) in rutas_data:
+            ruta_id = r[0]
+            placa   = r[1]
+            marcaciones_empleados = []
+
+            for emp in empleados:
+                emp_s = emp.strip()
+                # Resolver nombre y username
+                pair = nombre_map.get(emp_s, (emp_s, emp_s))
+                emp_nombre   = pair[0]
+                emp_username = pair[1]
+                candidatos_emp = {emp_s.lower(), emp_nombre.lower(), emp_username.lower()}
+
+                # Buscar marcaciones: primero con filtro de ruta/placa, luego fallback
+                todas_marcas = []
+                for key, marcas in marcaciones_bd.items():
+                    if key in candidatos_emp:
+                        # Filtrar por ruta o placa
+                        con_ruta = [m for m in marcas if m[7] == ruta_id or m[8] == placa]
+                        if con_ruta:
+                            todas_marcas = con_ruta
+                        elif not todas_marcas:
+                            todas_marcas = marcas  # fallback sin filtro ruta
+
+                ultima  = todas_marcas[-1] if todas_marcas else None
+                primera = todas_marcas[0]  if todas_marcas else None
+
                 tiempo_ruta = None
-                primera = todas_marcas[0] if todas_marcas else None
                 if primera:
                     try:
-                        h_parts = primera[1].split(":")
-                        h_min = int(h_parts[0]) * 60 + int(h_parts[1])
-                        ahora_min = datetime.now().hour * 60 + datetime.now().minute
+                        hp = primera[2].split(":")
+                        h_min = int(hp[0]) * 60 + int(hp[1])
                         tiempo_ruta = ahora_min - h_min
-                    except:
+                    except Exception:
                         tiempo_ruta = None
 
-                # Construir historial de marcaciones
-                historial = []
-                for m in todas_marcas:
-                    historial.append({
-                        "tipo": m[0],
-                        "hora": m[1],
-                        "latitud": float(m[2]) if m[2] else None,
-                        "longitud": float(m[3]) if m[3] else None,
-                        "es_extra": m[4] or False,
-                        "minutos_extra": m[5] or 0
-                    })
+                historial = [{
+                    "tipo": m[1], "hora": m[2],
+                    "latitud":  float(m[3]) if m[3] else None,
+                    "longitud": float(m[4]) if m[4] else None,
+                    "es_extra": m[5] or False,
+                    "minutos_extra": m[6] or 0
+                } for m in todas_marcas]
 
                 marcaciones_empleados.append({
-                    "nombre": emp,
-                    "ultima_marca": ultima[0] if ultima else "SIN MARCAR",
-                    "hora_marca": ultima[1] if ultima else None,
-                    "latitud": float(ultima[2]) if ultima and ultima[2] else None,
-                    "longitud": float(ultima[3]) if ultima and ultima[3] else None,
-                    "es_extra": ultima[4] if ultima else False,
-                    "minutos_extra": ultima[5] if ultima else 0,
+                    "nombre":         emp_nombre,
+                    "username":       emp_username,
+                    "ultima_marca":   ultima[1] if ultima else "SIN MARCAR",
+                    "hora_marca":     ultima[2] if ultima else None,
+                    "latitud":  float(ultima[3]) if ultima and ultima[3] else None,
+                    "longitud": float(ultima[4]) if ultima and ultima[4] else None,
+                    "es_extra":       ultima[5] if ultima else False,
+                    "minutos_extra":  ultima[6] if ultima else 0,
                     "tiempo_en_ruta_min": tiempo_ruta,
-                    "historial": historial
+                    "historial":      historial
                 })
 
             resultado.append({
-                "id": ruta_id,
+                "id":    ruta_id,
                 "placa": placa,
                 "empleados": marcaciones_empleados,
-                "h_inicio": r[3],
-                "h_fin": r[4],
-                "viaticos": float(r[5]) if r[5] else 0,
-                "estado": r[6] or "programada",
+                "h_inicio":  r[3],
+                "h_fin":     r[4],
+                "viaticos":  float(r[5]) if r[5] else 0,
+                "estado":    r[6] or "programada",
                 "tolerancia": r[9] or 15,
-                "total_empleados": len(empleados),
-                "empleados_activos": sum(1 for e in marcaciones_empleados if e["ultima_marca"] != "SIN MARCAR")
+                "total_empleados":  len(empleados),
+                "empleados_activos": sum(
+                    1 for e in marcaciones_empleados if e["ultima_marca"] != "SIN MARCAR"
+                )
             })
 
-        release_conn(conn)
         return resultado
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
 
 
 # ============================================================

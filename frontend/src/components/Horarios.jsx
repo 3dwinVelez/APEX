@@ -318,8 +318,8 @@ const Horarios = ({ onBack, user }) => {
   const [marcForm, setMarcForm] = useState({
     usuario: nombreUsuario || (user?.nombre || user?.username || ""),
     vehiculo_placa: "",
-    ruta_id: null,
-    novedad_tipo_id: null,
+    ruta_id: "",
+    novedad_tipo_id: "",
     novedad_descripcion: "",
   });
   const [resultMarca,    setResultMarca]    = useState(null);
@@ -370,48 +370,25 @@ const Horarios = ({ onBack, user }) => {
       .then(d => {
         const todas = Array.isArray(d) ? d : [];
         const nombreUser = nombreUsuario.toLowerCase();
-        const usernameActual = (user?.username || "").trim().toLowerCase();
         const mias = todas.filter(r => {
           const equipo = r.equipo || r.empleados || [];
-          return equipo.some(e => {
-            const ev = (e || "").trim().toLowerCase();
-            return ev === nombreUser || ev === usernameActual;
-          });
+          return equipo.some(e => (e || "").trim().toLowerCase() === nombreUser);
         });
         setRutasUsuario(mias);
         if (mias.length === 1) {
-          setMarcForm(prev => ({
-            ...prev,
+          setMarcForm(f => ({
+            ...f,
             vehiculo_placa: mias[0].placa || "",
-            ruta_id: mias[0].id ? String(mias[0].id) : null,
+            ruta_id: mias[0].id || "",
           }));
         } else if (mias.length === 0) {
-          setMarcForm(prev => ({ ...prev, vehiculo_placa: "", ruta_id: null }));
+          setMarcForm(f => ({ ...f, vehiculo_placa: "", ruta_id: "" }));
         }
       })
       .catch(()=>{});
   };
 
   useEffect(() => { cargarRutasUsuario(); }, [nombreUsuario]);
-
-  // GPS heartbeat: ping cada 2 minutos mientras esta en vista marcacion
-  useEffect(() => {
-    if (vista !== "marcacion") return;
-    if (!gpsCoordsActual) return;
-    const iv = setInterval(() => {
-      if (!gpsCoordsActual) return;
-      fetch(API_URL + "/gps/ping", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: (user?.username || "").trim(),
-          nombre:   (user?.nombre || user?.username || nombreUsuario || "").trim(),
-          lat: gpsCoordsActual.lat, lng: gpsCoordsActual.lon,
-          precision: gpsCoordsActual.precision,
-        }),
-      }).catch(()=>{});
-    }, 120000);
-    return () => clearInterval(iv);
-  }, [vista, gpsCoordsActual]);
 
   // Cargar ultima marcacion del usuario - funcion reutilizable
   const cargarUltimaMarca = () => {
@@ -422,11 +399,10 @@ const Horarios = ({ onBack, user }) => {
       .then(r=>r.json())
       .then(d => {
         const registros = Array.isArray(d) ? d : [];
-        const usernameLocal = (user?.username || "").trim().toLowerCase();
-        const mios = registros.filter(r => {
-          const ru = (r.usuario || "").trim().toLowerCase();
-          return ru === nombreUsuario.toLowerCase() || ru === usernameLocal;
-        });
+        // Filtrar solo del usuario actual por si el backend no filtro bien
+        const mios = registros.filter(r =>
+          (r.usuario || "").trim().toLowerCase() === nombreUsuario.toLowerCase()
+        );
         if (mios.length > 0) {
           // El ultimo en el array (ORDER BY id ASC) es el mas reciente
           const ultima = mios[mios.length - 1];
@@ -442,12 +418,17 @@ const Horarios = ({ onBack, user }) => {
   useEffect(() => { cargarUltimaMarca(); }, [nombreUsuario]);
 
   // ---- GPS OBLIGATORIO ----
+  // Precision aceptable en metros - por debajo de este valor se considera buena
+  const GPS_PRECISION_OK = 80;
+
   const obtenerGPS = () => new Promise((res) => {
     setGpsEstado("obteniendo");
     if (!navigator.geolocation) {
       setGpsEstado("error");
       return res(null);
     }
+
+    // FASE 1: lectura rapida sin cache (maximumAge:0)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords = {
@@ -456,14 +437,59 @@ const Horarios = ({ onBack, user }) => {
           precision: pos.coords.accuracy,
         };
         setGpsCoordsActual(coords);
-        setGpsEstado("ok");
-        res(coords);
+
+        // Si la precision ya es buena, usar directamente
+        if (coords.precision <= GPS_PRECISION_OK) {
+          setGpsEstado("ok");
+          res(coords);
+          return;
+        }
+
+        // FASE 2: precision insuficiente, refinar con watchPosition
+        setGpsEstado("refinando");
+        let mejorCoords = coords;
+        let watchId = null;
+        let resuelto = false;
+
+        const terminar = (coordsFinal) => {
+          if (resuelto) return;
+          resuelto = true;
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+          setGpsCoordsActual(coordsFinal);
+          setGpsEstado("ok");
+          res(coordsFinal);
+        };
+
+        // Timeout maximo de 8s para la fase 2
+        const timeout = setTimeout(() => terminar(mejorCoords), 8000);
+
+        watchId = navigator.geolocation.watchPosition(
+          (pos2) => {
+            const c2 = {
+              lat: pos2.coords.latitude,
+              lon: pos2.coords.longitude,
+              precision: pos2.coords.accuracy,
+            };
+            // Guardar si es mejor que lo que teniamos
+            if (c2.precision < mejorCoords.precision) {
+              mejorCoords = c2;
+              setGpsCoordsActual(c2);
+            }
+            // Si alcanzamos precision buena, terminar ya
+            if (c2.precision <= GPS_PRECISION_OK) {
+              clearTimeout(timeout);
+              terminar(mejorCoords);
+            }
+          },
+          () => { clearTimeout(timeout); terminar(mejorCoords); },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+        );
       },
       () => {
         setGpsEstado("error");
         res(null);
       },
-      { timeout: 10000, maximumAge: 30000, enableHighAccuracy: true }
+      { timeout: 6000, maximumAge: 0, enableHighAccuracy: true }
     );
   });
 
@@ -492,14 +518,10 @@ const Horarios = ({ onBack, user }) => {
       return;
     }
     const payload = {
-      usuario:             (marcForm.usuario || "").trim(),
-      vehiculo_placa:      marcForm.vehiculo_placa || "",
-      ruta_id:             marcForm.ruta_id || null,
-      novedad_tipo_id:     marcForm.novedad_tipo_id || null,
-      novedad_descripcion: marcForm.novedad_descripcion || "",
-      tipo_marca:          tipo,
-      latitud:             gps.lat,
-      longitud:            gps.lon,
+      ...marcForm,
+      tipo_marca: tipo,
+      latitud: gps.lat,
+      longitud: gps.lon,
     };
     try {
       const r    = await fetch(API_URL + "/marcaciones", {
@@ -507,32 +529,28 @@ const Horarios = ({ onBack, user }) => {
         body: JSON.stringify(payload),
       });
       const data = await r.json();
-      if (!r.ok) {
-        setMsg({ tipo: "error", texto: "Error " + r.status + ": " + (data.detail || "Error del servidor") });
-        setLoading(false);
-        return;
-      }
       const hora = new Date().toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
       setResultMarca({ ...data, tipo, gps, hora });
       setUltimaMarca(tipo);
-      const _gpsPing = () => fetch(API_URL + "/gps/ping", {
+      // Ping GPS inmediato para que el mapa y monitor se actualicen al instante
+      fetch(API_URL + "/gps/ping", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: (user?.username || user?.user || "").trim(),
-          nombre:   (user?.nombre || user?.username || marcForm.usuario || "").trim(),
+          username: user?.username || user?.user || marcForm.usuario,
+          nombre: marcForm.usuario,
           lat: gps.lat, lng: gps.lon, precision: gps.precision,
         }),
       }).catch(()=>{});
-      _gpsPing();
-      setTimeout(() => cargarUltimaMarca(), 800);
+      // Recargar estado de jornada
+      cargarUltimaMarca();
       if (data.alerta && data.minutos_extra > 0) {
         setPendJustif({ tipo, minutos_extra: data.minutos_extra, gps });
         setShowJustif(true);
       } else {
-        setMsg({ tipo: "success", texto: MARCAS_CFG[tipo].label + " registrado a las " + hora });
+        setMsg({ tipo: "success", texto: MARCAS_CFG[tipo].label + " registrado correctamente a las " + hora });
       }
-    } catch (err) {
-      setMsg({ tipo: "error", texto: "Error de red. Verifica conexion e intenta de nuevo." });
+    } catch {
+      setMsg({ tipo: "error", texto: "Error al registrar. Intenta de nuevo." });
     }
     setLoading(false);
   };
@@ -833,18 +851,23 @@ const Horarios = ({ onBack, user }) => {
       {/* Banner GPS obligatorio */}
       <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 16,
         background: gpsEstado === "ok" ? "#06D6A010"
-          : gpsEstado === "error" ? "#EF444410" : "#00B4D810",
+          : gpsEstado === "error" ? "#EF444410"
+          : gpsEstado === "refinando" ? "#F59E0B10" : "#00B4D810",
         border: "1px solid " + (gpsEstado === "ok" ? "#06D6A028"
-          : gpsEstado === "error" ? "#EF444428" : "#00B4D828"),
+          : gpsEstado === "error" ? "#EF444428"
+          : gpsEstado === "refinando" ? "#F59E0B28" : "#00B4D828"),
         display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
           background: gpsEstado === "ok" ? C.success
-            : gpsEstado === "error" ? C.danger : C.accent,
-          boxShadow: gpsEstado === "ok" ? "0 0 6px " + C.success : "none" }} />
+            : gpsEstado === "error" ? C.danger
+            : gpsEstado === "refinando" ? "#F59E0B" : C.accent,
+          boxShadow: gpsEstado === "ok" ? "0 0 6px " + C.success
+            : gpsEstado === "refinando" ? "0 0 6px #F59E0B" : "none" }} />
         <div style={{ fontSize: 12, flex: 1 }}>
           {gpsEstado === "idle"       && <span style={{ color: C.accent, fontWeight: 600 }}>GPS se activara al marcar. Asegurate de tener permisos habilitados en tu navegador.</span>}
           {gpsEstado === "obteniendo" && <span style={{ color: C.accent, fontWeight: 600 }}>Obteniendo ubicacion GPS...</span>}
-          {gpsEstado === "ok"         && <span style={{ color: C.success, fontWeight: 600 }}>GPS activo. Ubicacion capturada correctamente.</span>}
+          {gpsEstado === "refinando"  && <span style={{ color: "#F59E0B", fontWeight: 600 }}>Mejorando precision GPS... {gpsCoordsActual ? "(" + Math.round(gpsCoordsActual.precision) + "m)" : ""}</span>}
+          {gpsEstado === "ok"         && <span style={{ color: C.success, fontWeight: 600 }}>GPS activo {gpsCoordsActual ? "(" + Math.round(gpsCoordsActual.precision) + "m)" : ""}.</span>}
           {gpsEstado === "error"      && <span style={{ color: C.danger, fontWeight: 700 }}>GPS no disponible. Activa la ubicacion en tu navegador para poder marcar.</span>}
         </div>
         {gpsCoordsActual && (
@@ -906,8 +929,8 @@ const Horarios = ({ onBack, user }) => {
                 const seleccionada = marcForm.vehiculo_placa === r.placa;
                 return (
                   <div key={r.placa}
-                    onClick={() => setMarcForm(prev => ({
-                      ...prev, vehiculo_placa: r.placa, ruta_id: r.id ? String(r.id) : null
+                    onClick={() => setMarcForm(f => ({
+                      ...f, vehiculo_placa: r.placa, ruta_id: r.id || ""
                     }))}
                     style={{ padding: "8px 14px", borderRadius: 10, cursor: "pointer",
                       fontSize: 12, fontWeight: 700, transition: "all 0.15s",
