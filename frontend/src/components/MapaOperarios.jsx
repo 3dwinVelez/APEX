@@ -134,7 +134,7 @@ const MARCA_CONFIG = {
 
 const COLORES_OP = ["#06D6A0","#00B4D8","#F59E0B","#8B5CF6","#EF4444","#EC4899","#14B8A6","#F97316"];
 
-const OFFLINE_UMBRAL_MIN = 10; // alerta si no actualiza en +10 min
+const OFFLINE_UMBRAL_MIN = 15; // alerta si no actualiza en +15 min
 
 // ============================================================
 // HELPERS
@@ -294,6 +294,8 @@ const MapaOperarios = ({ user }) => {
 
   const [personalGps,    setPersonalGps]    = useState([]);
   const [vehiculosGps,   setVehiculosGps]   = useState([]);
+  
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   const { posicion, gpsError, gpsActivo } = useGPSTracking(user, 0.5);
 
@@ -591,7 +593,7 @@ const MapaOperarios = ({ user }) => {
           SIDEBAR - panel izquierdo comprimido, fondo oscuro
       ====================================================== */}
       <div className="apex-sb" style={{
-        width: 196,
+        width: panelCollapsed ? 0 : 196,
         flexShrink: 0,
         background: "#0D1B2A",
         display: "flex",
@@ -599,6 +601,8 @@ const MapaOperarios = ({ user }) => {
         overflowY: "auto",
         overflowX: "hidden",
         borderRight: "1px solid rgba(255,255,255,0.06)",
+        transition: "width 0.3s ease, opacity 0.3s ease",
+        opacity: panelCollapsed ? 0 : 1,
       }}>
 
         {/* Header sidebar */}
@@ -914,6 +918,42 @@ const MapaOperarios = ({ user }) => {
           MAPA - ocupa todo el espacio restante
       ====================================================== */}
       <div style={{ flex:1, position:"relative", overflow:"hidden", minWidth:0 }}>
+        
+        {/* Botón toggle panel GPS */}
+        <button
+          onClick={() => setPanelCollapsed(!panelCollapsed)}
+          style={{
+            position: "absolute",
+            top: 16,
+            left: 16,
+            zIndex: 1000,
+            width: 44,
+            height: 44,
+            borderRadius: 12,
+            background: "#0D1B2A",
+            border: "none",
+            color: "#fff",
+            fontSize: 20,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            transition: "all 0.3s ease"
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = "#1a2d42";
+            e.currentTarget.style.transform = "scale(1.08)";
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = "#0D1B2A";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          title={panelCollapsed ? "Mostrar panel GPS" : "Ocultar panel GPS"}
+        >
+          {panelCollapsed ? "☰" : "✕"}
+        </button>
+
         <div ref={mapRef} style={{ width:"100%", height:"100%" }} />
 
         {/* Panel detalle operario flotante */}

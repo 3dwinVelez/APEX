@@ -270,7 +270,10 @@ const Layout = ({ children, user, onLogout, activePage, onNavigate }) => {
         </button>
 
         {/* Contenido con margen para el botón */}
-        <div style={{ marginTop: isMobile ? 60 : 0 }}>
+        <div style={{ 
+          marginTop: isMobile ? 60 : 0,
+          marginLeft: isMobile ? 0 : 60 
+        }}>
           {children}
         </div>
       </div>
