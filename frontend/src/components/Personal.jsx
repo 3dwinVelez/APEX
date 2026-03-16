@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { C, API_URL } from "../shared/constants";
 import { Card, Btn, Input, Sel, PageHeader, Spinner, Toast } from "../shared/ui";
+import { useData } from "../context/DataContext";
+
 
 const Personal = ({ onBack }) => {
   const [vista, setVista]       = useState("lista");

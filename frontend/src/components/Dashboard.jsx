@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { C, API_URL } from "../shared/constants";
 import { Card, PageHeader, KPI } from "../shared/ui";
 import logo from "../assets/logo_scj.png";
+import { useData } from "../context/DataContext";
+
 
 const Dashboard = ({ onNavigate }) => {
   const [stats, setStats] = useState({ ordenes_hoy:0, personal_activo:0, vehiculos_activos:0, novedades:0 });

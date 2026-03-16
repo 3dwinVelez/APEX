@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { C } from "../shared/constants";
+import { useData } from "../context/DataContext";
 
 const Layout = ({ children, user, onLogout, activePage, onNavigate }) => {
   const [menuCollapsed, setMenuCollapsed] = useState(false);

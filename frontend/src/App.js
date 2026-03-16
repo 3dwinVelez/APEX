@@ -11,17 +11,29 @@ import Servicios     from "./components/Servicios";
 import Referencias   from "./components/Referencias";
 import Reportes      from "./components/Reportes";
 
-// Leaflet loader - must run before MapaOperarios mounts
+// ============================================================
+// IMPORTAR CONTEXT API PARA CACHÉ DE DATOS
+// ============================================================
+import { DataProvider } from "./context/DataContext";
+
+// ============================================================
+// CARGAR LEAFLET (para mapas)
+// ============================================================
 if (!document.getElementById("leaflet-css")) {
   const link = document.createElement("link");
-  link.id = "leaflet-css"; link.rel = "stylesheet";
+  link.id = "leaflet-css"; 
+  link.rel = "stylesheet";
   link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
   document.head.appendChild(link);
+  
   const script = document.createElement("script");
   script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
   document.head.appendChild(script);
 }
 
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("dashboard");
@@ -41,13 +53,15 @@ export default function App() {
   };
 
   return (
-    <Layout
-      user={user}
-      onLogout={() => { setUser(null); setPage("dashboard"); }}
-      activePage={page}
-      onNavigate={setPage}
-    >
-      {pages[page] || pages.dashboard}
-    </Layout>
+    <DataProvider>
+      <Layout
+        user={user}
+        onLogout={() => { setUser(null); setPage("dashboard"); }}
+        activePage={page}
+        onNavigate={setPage}
+      >
+        {pages[page] || pages.dashboard}
+      </Layout>
+    </DataProvider>
   );
 }

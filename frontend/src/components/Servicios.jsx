@@ -26,6 +26,36 @@ const CATEGORIAS_REF = [
   { id: "otros",         label: "Otros",             icon: "" },
 ];
 
+// ============================================================
+// HELPER: Subir fotos a Supabase Storage
+// ============================================================
+const subirFoto = async (ordenId, tipo, fotoData, metadata = {}) => {
+  try {
+    console.log(`📸 Subiendo foto ${tipo} para orden ${ordenId}...`);
+    const response = await fetch(`${API_URL}/ordenes/${ordenId}/fotos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orden_id: ordenId,
+        tipo: tipo,
+        base64_data: fotoData.base64,
+        size_original: fotoData.sizeOriginal || fotoData.size || 1000000,
+        metadata: metadata
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Error al subir foto");
+    }
+    const result = await response.json();
+    console.log(`✅ Foto ${tipo} subida - Compresión: ${result.compression_ratio}`);
+    return result;
+  } catch (error) {
+    console.error(`❌ Error subiendo foto ${tipo}:`, error);
+    throw error;
+  }
+};
+
 const Servicios = ({ onBack, user }) => {
   const [vista, setVista]       = useState("lista");
   const [ordenes, setOrdenes]   = useState([]);
@@ -54,6 +84,7 @@ const Servicios = ({ onBack, user }) => {
   // Estados para cierre
   const [firmaCliente, setFirmaCliente]     = useState(null);
   const [fotoCliente, setFotoCliente]       = useState(null);
+  const [subiendoFoto, setSubiendoFoto]     = useState(false);
 
   const [formOrden, setFormOrden] = useState({
     referencia_id:"", tecnico_id:"", tipo_servicio:"montaje",
@@ -133,6 +164,87 @@ const Servicios = ({ onBack, user }) => {
     } catch { setToast({ msg:"Error al iniciar", type:"error" }); }
   };
 
+  // ============================================================
+  // HANDLERS DE FOTOS CON SUBIDA AUTOMÁTICA
+  // ============================================================
+  const handleFotoFachada = async (fotoData) => {
+    setFotoFachada(fotoData);
+    try {
+      setSubiendoFoto(true);
+      await subirFoto(ordenSel.id, "fachada", fotoData);
+      setToast({ msg: "Foto de fachada guardada ✓", type: "success" });
+    } catch (error) {
+      setToast({ msg: "Error al guardar foto de fachada", type: "error" });
+    } finally {
+      setSubiendoFoto(false);
+    }
+  };
+
+  const handleFotoVehiculo = async (fotoData) => {
+    setFotoVehiculo(fotoData);
+    try {
+      setSubiendoFoto(true);
+      await subirFoto(ordenSel.id, "vehiculo", fotoData);
+      setToast({ msg: "Foto de vehículo guardada ✓", type: "success" });
+    } catch (error) {
+      setToast({ msg: "Error al guardar foto de vehículo", type: "error" });
+    } finally {
+      setSubiendoFoto(false);
+    }
+  };
+
+  const handleFotoPiezaAveriada = async (piezaId, piezaNombre, fotoData) => {
+    setFotosInspeccion(prev => ({ ...prev, [piezaId]: fotoData }));
+    try {
+      setSubiendoFoto(true);
+      await subirFoto(ordenSel.id, "pieza_averiada", fotoData, { pieza_nombre: piezaNombre, pieza_id: piezaId });
+      setToast({ msg: `Foto de ${piezaNombre} guardada ✓`, type: "success" });
+    } catch (error) {
+      setToast({ msg: `Error al guardar foto de ${piezaNombre}`, type: "error" });
+    } finally {
+      setSubiendoFoto(false);
+    }
+  };
+
+  const handleFotoEjecucionAntes = async (fotoData) => {
+    setFotoEjecucionAntes(fotoData);
+    try {
+      setSubiendoFoto(true);
+      await subirFoto(ordenSel.id, "producto_abierto", fotoData);
+      setToast({ msg: "Foto antes del servicio guardada ✓", type: "success" });
+    } catch (error) {
+      setToast({ msg: "Error al guardar foto", type: "error" });
+    } finally {
+      setSubiendoFoto(false);
+    }
+  };
+
+  const handleFotoEjecucionDespues = async (fotoData) => {
+    setFotoEjecucionDespues(fotoData);
+    try {
+      setSubiendoFoto(true);
+      await subirFoto(ordenSel.id, "producto_cerrado", fotoData);
+      setToast({ msg: "Foto después del servicio guardada ✓", type: "success" });
+    } catch (error) {
+      setToast({ msg: "Error al guardar foto", type: "error" });
+    } finally {
+      setSubiendoFoto(false);
+    }
+  };
+
+  const handleFotoCliente = async (fotoData) => {
+    setFotoCliente(fotoData);
+    try {
+      setSubiendoFoto(true);
+      await subirFoto(ordenSel.id, "cliente", fotoData);
+      setToast({ msg: "Foto del cliente guardada ✓", type: "success" });
+    } catch (error) {
+      setToast({ msg: "Error al guardar foto del cliente", type: "error" });
+    } finally {
+      setSubiendoFoto(false);
+    }
+  };
+
   const avanzarDesdeFachada = async () => {
     if (!fotoFachada) {
       setToast({ msg:"Debes capturar la foto de fachada antes de continuar", type:"error" });
@@ -207,11 +319,16 @@ const Servicios = ({ onBack, user }) => {
       return;
     }
     
+    if (!fotoEjecucionAntes || !fotoEjecucionDespues) {
+      setToast({ msg: "Se requieren las fotos antes/después del servicio", type: "error" });
+      return;
+    }
+    
     try {
       // Aqui se guardarian todas las fotos y firma en el backend
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/cerrar`, { method:"PATCH" });
       setOrdenSel(o=>({...o, estado:"cerrada"}));
-      setToast({ msg:"Servicio cerrado exitosamente - Firma y fotos registradas", type:"success" });
+      setToast({ msg:"Servicio cerrado exitosamente - Todas las fotos y firma registradas ✓", type:"success" });
       setTimeout(()=>{ setVista("lista"); cargar(); }, 1600);
     } catch { setToast({ msg:"Error al cerrar", type:"error" }); }
   };
@@ -331,15 +448,17 @@ const Servicios = ({ onBack, user }) => {
               <CapturaFoto
                 etiqueta="Foto de Fachada"
                 obligatoria={true}
-                onFotoCapturada={setFotoFachada}
+                onFotoCapturada={handleFotoFachada}
                 existente={fotoFachada?.base64}
+                disabled={subiendoFoto}
               />
 
               <CapturaFoto
                 etiqueta="Foto del Vehiculo (Opcional)"
                 obligatoria={false}
-                onFotoCapturada={setFotoVehiculo}
+                onFotoCapturada={handleFotoVehiculo}
                 existente={fotoVehiculo?.base64}
+                disabled={subiendoFoto}
               />
 
               {fotoFachada && (
@@ -421,13 +540,9 @@ const Servicios = ({ onBack, user }) => {
                       <CapturaFoto
                         etiqueta={`Foto de evidencia - ${p.nombre_pieza}`}
                         obligatoria={true}
-                        onFotoCapturada={(foto) => {
-                          setFotosInspeccion(prev => ({
-                            ...prev,
-                            [p.pieza_id]: foto
-                          }));
-                        }}
+                        onFotoCapturada={(foto) => handleFotoPiezaAveriada(p.pieza_id, p.nombre_pieza, foto)}
                         existente={fotosInspeccion[p.pieza_id]?.base64}
+                        disabled={subiendoFoto}
                       />
                     </div>
                   )}
@@ -521,15 +636,17 @@ const Servicios = ({ onBack, user }) => {
             <CapturaFoto
               etiqueta="Foto 1: Producto Abierto (cajones/puertas abiertas)"
               obligatoria={true}
-              onFotoCapturada={setFotoEjecucionAntes}
+              onFotoCapturada={handleFotoEjecucionAntes}
               existente={fotoEjecucionAntes?.base64}
+              disabled={subiendoFoto}
             />
 
             <CapturaFoto
               etiqueta="Foto 2: Producto Cerrado (todo cerrado)"
               obligatoria={true}
-              onFotoCapturada={setFotoEjecucionDespues}
+              onFotoCapturada={handleFotoEjecucionDespues}
               existente={fotoEjecucionDespues?.base64}
+              disabled={subiendoFoto}
             />
 
             {fotoEjecucionAntes && fotoEjecucionDespues && (
@@ -602,8 +719,9 @@ const Servicios = ({ onBack, user }) => {
             <CapturaFoto
               etiqueta="Foto del Cliente (quien recibe)"
               obligatoria={true}
-              onFotoCapturada={setFotoCliente}
+              onFotoCapturada={handleFotoCliente}
               existente={fotoCliente?.base64}
+              disabled={subiendoFoto}
             />
 
             {/* Firma Digital */}

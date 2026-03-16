@@ -3,15 +3,26 @@ import json
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
+from supabase import create_client, Client
+import base64
 
 load_dotenv()
 
 app = FastAPI(title="APEX ERP API", version="2.0")
 
+# ============================================================
+# MIDDLEWARE: COMPRESIÓN GZIP (Reduce transferencia 70%)
+# ============================================================
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# ============================================================
+# MIDDLEWARE: CORS
+# ============================================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -63,6 +74,15 @@ def release_conn(conn):
             pass
 
 # ============================================================
+# SUPABASE STORAGE CONFIGURATION
+# ============================================================
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_BUCKET = "fotos-servicios"
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ============================================================
 # MODELOS PYDANTIC (validacion de datos)
 # ============================================================
 class LoginRequest(BaseModel):
@@ -80,6 +100,14 @@ class PersonalCreate(BaseModel):
     costo: Optional[float] = 0
     salario: Optional[float] = 0
     extra: Optional[float] = 0
+
+
+class FotoUpload(BaseModel):
+    orden_id: int
+    tipo: str
+    base64_data: str
+    size_original: int
+    metadata: dict = {}
 
 class VehiculoCreate(BaseModel):
     placa: str
@@ -1721,3 +1749,93 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("main_api:app", host="0.0.0.0", port=port, reload=False)
+# ============================================================
+# ENDPOINTS FOTOS - SUPABASE STORAGE
+# ============================================================
+
+@app.post("/ordenes/{orden_id}/fotos")
+def upload_foto(orden_id: int, foto: FotoUpload):
+    """Subir foto a Supabase Storage"""
+    conn = None
+    try:
+        print(f"📸 Subiendo foto tipo '{foto.tipo}' para orden {orden_id}")
+        
+        if "," in foto.base64_data:
+            header, data = foto.base64_data.split(",", 1)
+            extension = "jpg" if "jpeg" in header or "jpg" in header else "png"
+        else:
+            data = foto.base64_data
+            extension = "jpg"
+        
+        image_bytes = base64.b64decode(data)
+        size_bytes = len(image_bytes)
+        
+        if size_bytes > 5 * 1024 * 1024:
+            raise HTTPException(400, f"Foto muy grande: {size_bytes / 1024 / 1024:.2f}MB")
+        
+        timestamp = int(datetime.now().timestamp() * 1000)
+        filename = f"orden-{orden_id}/{foto.tipo}-{timestamp}.{extension}"
+        
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            path=filename,
+            file=image_bytes,
+            file_options={"content-type": f"image/{extension}"}
+        )
+        
+        public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(filename)
+        
+        conn = get_conn()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            INSERT INTO fotos_servicios 
+            (orden_id, tipo, url, storage_path, size_bytes, size_original, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, url, timestamp
+        """, [orden_id, foto.tipo, public_url, filename, size_bytes, foto.size_original, json.dumps(foto.metadata)])
+        
+        result = cur.fetchone()
+        conn.commit()
+        
+        compression_ratio = (1 - size_bytes / foto.size_original) * 100 if foto.size_original > 0 else 0
+        
+        return {
+            "success": True,
+            "id": result[0],
+            "url": result[1],
+            "timestamp": result[2].isoformat() if result[2] else None,
+            "size_bytes": size_bytes,
+            "compression_ratio": f"{compression_ratio:.1f}%"
+        }
+    
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        if conn:
+            conn.rollback()
+        raise HTTPException(500, f"Error: {str(e)}")
+    finally:
+        release_conn(conn)
+
+
+@app.get("/ordenes/{orden_id}/fotos")
+def get_fotos_orden(orden_id: int):
+    """Listar fotos de una orden"""
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT id, tipo, url, timestamp, size_bytes
+            FROM fotos_servicios
+            WHERE orden_id = %s
+            ORDER BY timestamp ASC
+        """, [orden_id])
+        
+        rows = cur.fetchall()
+        return [{"id": r[0], "tipo": r[1], "url": r[2], "timestamp": r[3].isoformat() if r[3] else None, "size_bytes": r[4]} for r in rows]
+    
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+    finally:
+        release_conn(conn)

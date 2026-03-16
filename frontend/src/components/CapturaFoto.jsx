@@ -1,6 +1,9 @@
 import { useState, useRef } from "react";
 import { C } from "../shared/constants";
 import { Btn, Card } from "../shared/ui";
+import { useData } from "../context/DataContext";
+
+
 
 const CapturaFoto = ({ 
   onFotoCapturada, 

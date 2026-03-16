@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { C, API_URL } from "../shared/constants";
 import { Card, Btn, Input, Sel, PageHeader, Toast } from "../shared/ui";
+import { useData } from "../context/DataContext";
 
 const CATEGORIAS_REF = [
   { id: "muebles",       label: "Muebles",          icon: "" },

@@ -1,5 +1,6 @@
 import { C } from "../shared/constants";
 import { Card, Btn, KPI, PageHeader } from "../shared/ui";
+import { useData } from "../context/DataContext";
 
 const Reportes = ({ onBack }) => (
   <div>

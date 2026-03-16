@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { C, API_URL } from "../shared/constants";
 import { Card, Btn, PageHeader, Spinner } from "../shared/ui";
 import { useGPSTracking } from "../shared/hooks";
+import { useData } from "../context/DataContext";
 
 // ============================================================
 // ICONOS SVG DE CAMIONES (sin cambios, se mantienen igual)

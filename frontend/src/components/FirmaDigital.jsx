@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import { C } from "../shared/constants";
 import { Btn } from "../shared/ui";
+import { useData } from "../context/DataContext";
+
 
 const FirmaDigital = ({ onFirmaCapturada, existente = null }) => {
   const canvasRef = useRef(null);
