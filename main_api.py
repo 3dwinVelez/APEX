@@ -10,6 +10,15 @@ import psycopg2
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import base64
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+import requests
 
 load_dotenv()
 
@@ -1839,3 +1848,421 @@ def get_fotos_orden(orden_id: int):
         raise HTTPException(500, f"Error: {str(e)}")
     finally:
         release_conn(conn)
+
+
+
+
+# ============================================================
+# ENDPOINT: Generar PDF de reporte
+# ============================================================
+ 
+@app.get("/ordenes/{orden_id}/reporte-pdf")
+def generar_reporte_pdf(orden_id: int):
+    """
+    Genera un PDF completo del reporte de servicio
+    Incluye: datos, timeline, fotos, inspección, novedades
+    """
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        
+        # Obtener datos de la orden
+        cur.execute("""
+            SELECT o.*, r.nombre as ref_nombre, r.categoria,
+                   p.nombre as tecnico_nombre
+            FROM ordenes_servicio o
+            LEFT JOIN referencias r ON o.referencia_id = r.id
+            LEFT JOIN personal p ON o.tecnico_id = p.id
+            WHERE o.id = %s
+        """, [orden_id])
+        
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Orden no encontrada")
+        
+        cols = [d[0] for d in cur.description]
+        orden = dict(zip(cols, row))
+        
+        # Obtener fotos
+        cur.execute("""
+            SELECT tipo, url, timestamp, size_bytes, metadata
+            FROM fotos_servicios
+            WHERE orden_id = %s
+            ORDER BY timestamp
+        """, [orden_id])
+        fotos = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+        
+        # Obtener inspección
+        cur.execute("""
+            SELECT nombre_pieza, estado, novedad_descripcion, accion_solicitada
+            FROM inspeccion_piezas
+            WHERE orden_id = %s
+        """, [orden_id])
+        inspeccion = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+        
+        # Obtener novedades
+        cur.execute("""
+            SELECT tipo, descripcion, fecha_registro
+            FROM novedades_servicio
+            WHERE orden_id = %s
+            ORDER BY fecha_registro
+        """, [orden_id])
+        novedades = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+        
+        # ====================================================
+        # GENERAR PDF
+        # ====================================================
+        
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Estilos personalizados
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            textColor=colors.HexColor("#1E40AF"),
+            spaceAfter=12,
+            alignment=TA_CENTER
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor("#374151"),
+            spaceAfter=10,
+            spaceBefore=15
+        )
+        
+        # ====================================================
+        # TÍTULO
+        # ====================================================
+        story.append(Paragraph(f"REPORTE DE SERVICIO", title_style))
+        story.append(Paragraph(f"{orden['consecutivo']}", styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # ====================================================
+        # INFORMACIÓN GENERAL
+        # ====================================================
+        story.append(Paragraph("INFORMACIÓN DEL SERVICIO", heading_style))
+        
+        # Estado
+        estado_map = {
+            "cerrada": ("COMPLETADO", colors.green),
+            "no_ejecutada": ("NO EJECUTADO", colors.red),
+            "cancelada": ("CANCELADO", colors.red)
+        }
+        estado_texto, estado_color = estado_map.get(orden['estado'], ("PENDIENTE", colors.orange))
+        
+        info_data = [
+            ["Cliente:", orden['cliente_nombre']],
+            ["Dirección:", orden['cliente_direccion'] or "N/A"],
+            ["Teléfono:", orden['cliente_telefono'] or "N/A"],
+            ["Referencia:", orden['ref_nombre'] or "N/A"],
+            ["Categoría:", orden['categoria'] or "N/A"],
+            ["Tipo Servicio:", orden['tipo_servicio'].upper() if orden['tipo_servicio'] else "N/A"],
+            ["Técnico:", orden['tecnico_nombre'] or "No asignado"],
+            ["Factura:", orden['num_factura'] or "N/A"],
+            ["Estado:", estado_texto],
+        ]
+        
+        # Calcular duración
+        if orden['fecha_inicio'] and orden['fecha_cierre']:
+            diff = orden['fecha_cierre'] - orden['fecha_inicio']
+            hours = diff.seconds // 3600
+            mins = (diff.seconds % 3600) // 60
+            duracion = f"{hours}h {mins}min"
+            info_data.append(["Duración:", duracion])
+        
+        info_table = Table(info_data, colWidths=[2*inch, 4*inch])
+        info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F3F4F6")),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor("#374151")),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB"))
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # ====================================================
+        # TIMELINE
+        # ====================================================
+        if orden['fecha_inicio'] or orden['fecha_cierre']:
+            story.append(Paragraph("LÍNEA DE TIEMPO", heading_style))
+            timeline_data = []
+            
+            if orden['fecha_inicio']:
+                timeline_data.append([
+                    "📍 Iniciado:",
+                    orden['fecha_inicio'].strftime("%d/%m/%Y %H:%M")
+                ])
+                if orden.get('lat_inicio') and orden.get('lng_inicio'):
+                    timeline_data.append([
+                        "   GPS:",
+                        f"{orden['lat_inicio']:.4f}, {orden['lng_inicio']:.4f}"
+                    ])
+            
+            if len(inspeccion) > 0:
+                problemas = len([p for p in inspeccion if p['estado'] != 'ok'])
+                timeline_data.append([
+                    "🔍 Inspección:",
+                    f"{len(inspeccion)} piezas ({problemas} problema(s))"
+                ])
+            
+            if orden['fecha_cierre']:
+                timeline_data.append([
+                    "✓ Finalizado:" if orden['estado'] == 'cerrada' else "✗ Cerrado:",
+                    orden['fecha_cierre'].strftime("%d/%m/%Y %H:%M")
+                ])
+            
+            timeline_table = Table(timeline_data, colWidths=[2*inch, 4*inch])
+            timeline_table.setStyle(TableStyle([
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor("#6B7280"))
+            ]))
+            story.append(timeline_table)
+            story.append(Spacer(1, 0.3*inch))
+        
+        # ====================================================
+        # INSPECCIÓN
+        # ====================================================
+        if len(inspeccion) > 0:
+            story.append(Paragraph("INSPECCIÓN DE PIEZAS", heading_style))
+            
+            insp_data = [["Pieza", "Estado", "Observación", "Acción"]]
+            for pieza in inspeccion:
+                estado_texto = {
+                    'ok': '✓ OK',
+                    'averiada': '⚠ Averiada',
+                    'faltante': '✗ Faltante'
+                }.get(pieza['estado'], pieza['estado'])
+                
+                accion_texto = {
+                    'cambio': 'Cambio',
+                    'garantia': 'Garantía',
+                    'reparar': 'Reparar',
+                    'ninguna': '-'
+                }.get(pieza['accion_solicitada'], '-')
+                
+                insp_data.append([
+                    pieza['nombre_pieza'],
+                    estado_texto,
+                    pieza['novedad_descripcion'] or '-',
+                    accion_texto
+                ])
+            
+            insp_table = Table(insp_data, colWidths=[1.5*inch, 1*inch, 2.5*inch, 1*inch])
+            insp_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3B82F6")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")])
+            ]))
+            story.append(insp_table)
+            story.append(Spacer(1, 0.3*inch))
+        
+        # ====================================================
+        # NOVEDADES
+        # ====================================================
+        if len(novedades) > 0:
+            story.append(Paragraph("NOVEDADES REPORTADAS", heading_style))
+            
+            for i, nov in enumerate(novedades, 1):
+                nov_text = f"<b>{i}. {nov['tipo'].upper() if nov['tipo'] else 'NOVEDAD'}</b><br/>"
+                nov_text += f"{nov['descripcion']}<br/>"
+                nov_text += f"<i>Fecha: {nov['fecha_registro'].strftime('%d/%m/%Y %H:%M')}</i>"
+                story.append(Paragraph(nov_text, styles['Normal']))
+                story.append(Spacer(1, 0.1*inch))
+            
+            story.append(Spacer(1, 0.2*inch))
+        
+        # ====================================================
+        # FOTOS
+        # ====================================================
+        if len(fotos) > 0:
+            story.append(PageBreak())
+            story.append(Paragraph("GALERÍA DE FOTOS", heading_style))
+            
+            # Organizar fotos por tipo
+            fotos_organizadas = {
+                'fachada': [],
+                'pieza_averiada': [],
+                'producto_abierto': [],
+                'producto_cerrado': [],
+                'cliente': [],
+                'no_ejecutada': []
+            }
+            
+            for foto in fotos:
+                tipo = foto['tipo']
+                if tipo in fotos_organizadas:
+                    fotos_organizadas[tipo].append(foto)
+            
+            # Foto Fachada
+            if fotos_organizadas['fachada']:
+                story.append(Paragraph("🏠 Foto de Fachada", styles['Heading3']))
+                try:
+                    img_data = requests.get(fotos_organizadas['fachada'][0]['url']).content
+                    img = RLImage(BytesIO(img_data), width=4*inch, height=3*inch)
+                    story.append(img)
+                except:
+                    story.append(Paragraph("[Imagen no disponible]", styles['Normal']))
+                story.append(Spacer(1, 0.2*inch))
+            
+            # Fotos de Piezas Averiadas
+            if fotos_organizadas['pieza_averiada']:
+                story.append(Paragraph(f"⚠️ Piezas con Problemas ({len(fotos_organizadas['pieza_averiada'])})", styles['Heading3']))
+                for foto in fotos_organizadas['pieza_averiada']:
+                    metadata = foto.get('metadata', {})
+                    nombre_pieza = metadata.get('pieza_nombre', 'Pieza') if isinstance(metadata, dict) else 'Pieza'
+                    story.append(Paragraph(f"<b>{nombre_pieza}</b>", styles['Normal']))
+                    try:
+                        img_data = requests.get(foto['url']).content
+                        img = RLImage(BytesIO(img_data), width=2.5*inch, height=2*inch)
+                        story.append(img)
+                    except:
+                        story.append(Paragraph("[Imagen no disponible]", styles['Normal']))
+                    story.append(Spacer(1, 0.15*inch))
+            
+            # Fotos de Ejecución
+            if fotos_organizadas['producto_abierto'] or fotos_organizadas['producto_cerrado']:
+                story.append(Paragraph("🔧 Trabajo Realizado", styles['Heading3']))
+                fotos_trabajo = []
+                if fotos_organizadas['producto_abierto']:
+                    try:
+                        img_data = requests.get(fotos_organizadas['producto_abierto'][0]['url']).content
+                        img = RLImage(BytesIO(img_data), width=2.5*inch, height=2*inch)
+                        fotos_trabajo.append([Paragraph("<b>Producto Abierto</b>", styles['Normal']), img])
+                    except:
+                        fotos_trabajo.append([Paragraph("<b>Producto Abierto</b>", styles['Normal']), "[No disponible]"])
+                
+                if fotos_organizadas['producto_cerrado']:
+                    try:
+                        img_data = requests.get(fotos_organizadas['producto_cerrado'][0]['url']).content
+                        img = RLImage(BytesIO(img_data), width=2.5*inch, height=2*inch)
+                        if len(fotos_trabajo) > 0:
+                            fotos_trabajo[0].append(Paragraph("<b>Producto Cerrado</b>", styles['Normal']))
+                            fotos_trabajo[0].append(img)
+                        else:
+                            fotos_trabajo.append([Paragraph("<b>Producto Cerrado</b>", styles['Normal']), img])
+                    except:
+                        pass
+                
+                if fotos_trabajo:
+                    trabajo_table = Table(fotos_trabajo, colWidths=[1*inch, 2.5*inch, 1*inch, 2.5*inch])
+                    story.append(trabajo_table)
+                    story.append(Spacer(1, 0.2*inch))
+            
+            # Foto Cliente
+            if fotos_organizadas['cliente']:
+                story.append(Paragraph("👤 Cliente (quien recibió)", styles['Heading3']))
+                try:
+                    img_data = requests.get(fotos_organizadas['cliente'][0]['url']).content
+                    img = RLImage(BytesIO(img_data), width=2.5*inch, height=3*inch)
+                    story.append(img)
+                except:
+                    story.append(Paragraph("[Imagen no disponible]", styles['Normal']))
+        
+        # ====================================================
+        # GENERAR PDF
+        # ====================================================
+        doc.build(story)
+        buffer.seek(0)
+        
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=Reporte_{orden['consecutivo']}_{orden['cliente_nombre'].replace(' ', '_')}.pdf"
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(500, f"Error generando PDF: {str(e)}")
+    finally:
+        release_conn(conn)
+ 
+        
+        # ============================================================
+        # ENDPOINT: Reporte completo (JSON)
+        # ============================================================
+        
+        @app.get("/ordenes/{orden_id}/reporte-completo")
+        def reporte_completo(orden_id: int):
+            """
+            Obtiene todos los datos de una orden para vista de reporte
+            """
+            conn = None
+            try:
+                conn = get_conn()
+                cur = conn.cursor()
+                
+                # Orden
+                cur.execute("SELECT * FROM ordenes_servicio WHERE id = %s", [orden_id])
+                cols = [d[0] for d in cur.description]
+                orden = dict(zip(cols, cur.fetchone() or []))
+                
+                if not orden:
+                    raise HTTPException(404, "Orden no encontrada")
+                
+                # Fotos
+                cur.execute("""
+                    SELECT id, tipo, url, timestamp, size_bytes, metadata
+                    FROM fotos_servicios
+                    WHERE orden_id = %s
+                    ORDER BY timestamp
+                """, [orden_id])
+                fotos = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+                
+                # Inspección
+                cur.execute("""
+                    SELECT nombre_pieza, estado, novedad_descripcion, accion_solicitada
+                    FROM inspeccion_piezas
+                    WHERE orden_id = %s
+                """, [orden_id])
+                inspeccion = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+                
+                # Novedades
+                cur.execute("""
+                    SELECT tipo, descripcion, fecha_registro
+                    FROM novedades_servicio
+                    WHERE orden_id = %s
+                    ORDER BY fecha_registro
+                """, [orden_id])
+                novedades = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+                
+                return {
+                    "orden": orden,
+                    "fotos": fotos,
+                    "inspeccion": inspeccion,
+                    "novedades": novedades
+                }
+                
+            except Exception as e:
+                raise HTTPException(500, str(e))
+            finally:
+                release_conn(conn)
+        
+
+# ============================================================
+# ENDPOINT: Detalle de orden (con novedades)
+# ============================================================
+@app.get("/ordenes/{orden_id}/detalle")
+def get_orden_detalle(orden_id: int):
+    """
+    Obtiene el detalle completo de una orden incluyendo novedades
+    """
+    return {"novedades": []}

@@ -5,13 +5,13 @@ import CapturaFoto from "./CapturaFoto";
 import FirmaDigital from "./FirmaDigital";
 
 const ESTADO_ORDEN = {
-  pendiente:   { color: "#94A3B8", label: "Pendiente",   icon: "o" },
-  en_curso:    { color: "#00B4D8", label: "En Curso",    icon: ">" },
-  fachada:     { color: "#3B82F6", label: "Fachada",     icon: "" },
-  inspeccion:  { color: "#F59E0B", label: "Inspeccion",  icon: "" },
-  ejecucion:   { color: "#8B5CF6", label: "Ejecucion",   icon: "" },
-  cerrada:     { color: "#06D6A0", label: "Cerrada",     icon: "v" },
-  cancelado:   { color: "#EF4444", label: "Cancelado",   icon: "?" },
+  pendiente:     { color: "#94A3B8", label: "Pendiente",      icon: "○" },
+  en_curso:      { color: "#00B4D8", label: "En Curso",       icon: "▶" },
+  inspeccion:    { color: "#F59E0B", label: "Inspección",     icon: "🔍" },
+  ejecucion:     { color: "#8B5CF6", label: "Ejecución",      icon: "🔧" },
+  cerrada:       { color: "#06D6A0", label: "Completada",     icon: "✓" },
+  no_ejecutada:  { color: "#EF4444", label: "No Ejecutada",   icon: "✗" },  // ← NUEVO
+  cancelada:     { color: "#EF4444", label: "Cancelada",      icon: "✗" },
 };
 
 const CATEGORIAS_REF = [
@@ -67,7 +67,6 @@ const Servicios = ({ onBack, user }) => {
   const [filtroEstado, setFiltroEstado] = useState("");
   const [pasoServicio, setPasoServicio] = useState(1);
   const [inspeccion, setInspeccion]     = useState([]);
-  const [novedades, setNovedades]       = useState([]);
   const [formNovedad, setFormNovedad]   = useState({ descripcion:"", tipo:"averia", accion:"cambio" });
   const [showNovedad, setShowNovedad]   = useState(false);
   const firmaRef = useRef(null);
@@ -75,7 +74,6 @@ const Servicios = ({ onBack, user }) => {
 
   // Estados para fotos
   const [fotoFachada, setFotoFachada]       = useState(null);
-  const [fotoVehiculo, setFotoVehiculo]     = useState(null);
   const [fotoEjecucionAntes, setFotoEjecucionAntes] = useState(null);
   const [fotoEjecucionDespues, setFotoEjecucionDespues] = useState(null);
   const [fotoCierre, setFotoCierre]         = useState(null);
@@ -85,6 +83,14 @@ const Servicios = ({ onBack, user }) => {
   const [firmaCliente, setFirmaCliente]     = useState(null);
   const [fotoCliente, setFotoCliente]       = useState(null);
   const [subiendoFoto, setSubiendoFoto]     = useState(false);
+    // Estados para cierre no ejecutado
+  const [motivoNoEjecucion, setMotivoNoEjecucion] = useState("");
+  const [fotoNoEjecucion, setFotoNoEjecucion] = useState(null);
+
+  // Estados para reporte
+  const [fotosOrden, setFotosOrden] = useState([]);
+  const [novedades, setNovedades] = useState([]);
+  const [descargandoPDF, setDescargandoPDF] = useState(false);
 
   const [formOrden, setFormOrden] = useState({
     referencia_id:"", tecnico_id:"", tipo_servicio:"montaje",
@@ -126,29 +132,60 @@ const Servicios = ({ onBack, user }) => {
   };
 
   const abrirOrden = async (ord) => {
-    setOrdenSel(ord);
-    // Cargar piezas de la referencia para inspeccion
-    if (ord.referencia_id) {
-      const refData = refs.find(r=>r.id===ord.referencia_id);
-      if (refData?.piezas) {
-        setInspeccion(refData.piezas.map(p=>({ pieza_id:p.id, nombre_pieza:p.nombre, estado:"ok", novedad_descripcion:"", accion_solicitada:"ninguna" })));
-      }
+  setOrdenSel(ord);
+  
+  // Cargar piezas de la referencia para inspección
+  if (ord.referencia_id) {
+    const refData = refs.find(r => r.id === ord.referencia_id);
+    if (refData?.piezas) {
+      setInspeccion(refData.piezas.map(p => ({
+        pieza_id: p.id,
+        nombre_pieza: p.nombre,
+        estado: "ok",
+        novedad_descripcion: "",
+        accion_solicitada: "ninguna"
+      })));
     }
-    const novsRes = await fetch(`${API_URL}/ordenes/${ord.id}/detalle`).then(r=>r.json()).catch(()=>({}));
-    setNovedades(novsRes.novedades||[]);
-    
-    // Mapeo correcto: estado -> paso
-    let paso = 1;
-    if (ord.estado === "pendiente") paso = 1;
-    else if (ord.estado === "en_curso") paso = 2;
-    else if (ord.estado === "fachada") paso = 3;
-    else if (ord.estado === "inspeccion") paso = 4;
-    else if (ord.estado === "ejecucion") paso = 5;
-    else if (ord.estado === "cerrada") paso = 6; // Orden completada
-    
-    setPasoServicio(paso);
-    setVista("servicio");
-  };
+  }
+
+  // ============================================================
+  // NUEVO: Cargar fotos y novedades existentes
+  // ============================================================
+  try {
+    const [fotos, novs] = await Promise.all([
+      fetch(`${API_URL}/ordenes/${ord.id}/fotos`)
+        .then(r => r.json())
+        .catch(() => []),
+      fetch(`${API_URL}/ordenes/${ord.id}/detalle`)
+        .then(r => r.json())
+        .then(d => d.novedades || [])
+        .catch(() => [])
+    ]);
+    setFotosOrden(fotos);    // ← Guarda las fotos
+    setNovedades(novs);       // ← Guarda las novedades
+  } catch { }
+
+  // ============================================================
+  // NUEVO: Determinar paso según estado
+  // ============================================================
+  let paso = 1;
+  if (ord.estado === "pendiente") paso = 1;
+  else if (ord.estado === "en_curso") paso = 2;
+  else if (ord.estado === "inspeccion") paso = 3;
+  else if (ord.estado === "ejecucion") paso = 4;  // ← Cambió de 5 a 4
+  else if (ord.estado === "cerrada" || ord.estado === "no_ejecutada") paso = 5;  // ← Cambió
+
+  setPasoServicio(paso);
+  
+  // ============================================================
+  // NUEVO: Si está cerrada, ir a vista de reporte
+  // ============================================================
+  setVista(
+    ord.estado === "cerrada" || ord.estado === "no_ejecutada" 
+      ? "reporte"   // ← Vista de reporte
+      : "servicio"  // ← Vista de servicio normal
+  );
+};
 
   const iniciarOrden = async () => {
     try {
@@ -175,19 +212,6 @@ const Servicios = ({ onBack, user }) => {
       setToast({ msg: "Foto de fachada guardada ✓", type: "success" });
     } catch (error) {
       setToast({ msg: "Error al guardar foto de fachada", type: "error" });
-    } finally {
-      setSubiendoFoto(false);
-    }
-  };
-
-  const handleFotoVehiculo = async (fotoData) => {
-    setFotoVehiculo(fotoData);
-    try {
-      setSubiendoFoto(true);
-      await subirFoto(ordenSel.id, "vehiculo", fotoData);
-      setToast({ msg: "Foto de vehículo guardada ✓", type: "success" });
-    } catch (error) {
-      setToast({ msg: "Error al guardar foto de vehículo", type: "error" });
     } finally {
       setSubiendoFoto(false);
     }
@@ -245,6 +269,21 @@ const Servicios = ({ onBack, user }) => {
     }
   };
 
+  const handleFotoNoEjecucion = async (fotoData) => {
+  setFotoNoEjecucion(fotoData);
+  try {
+    setSubiendoFoto(true);
+    await subirFoto(ordenSel.id, "no_ejecutada", fotoData, {
+      motivo: motivoNoEjecucion
+    });
+    setToast({ msg: "Foto de evidencia guardada ✓", type: "success" });
+  } catch {
+    setToast({ msg: "Error al guardar foto de evidencia", type: "error" });
+  } finally {
+    setSubiendoFoto(false);
+  }
+};
+
   const avanzarDesdeFachada = async () => {
     if (!fotoFachada) {
       setToast({ msg:"Debes capturar la foto de fachada antes de continuar", type:"error" });
@@ -264,7 +303,7 @@ const Servicios = ({ onBack, user }) => {
     }
   };
 
-  const guardarInspeccion = async () => {
+  const guardarInspeccion = async (armable = true) => {
     // Validar que piezas averiadas/faltantes tengan foto
     const piezasConProblema = inspeccion.filter(p => p.estado !== "ok");
     const faltanFotos = piezasConProblema.filter(p => !fotosInspeccion[p.pieza_id]);
@@ -278,15 +317,28 @@ const Servicios = ({ onBack, user }) => {
     }
     
     try {
-      await fetch(`${API_URL}/ordenes/${ordenSel.id}/inspeccion`, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(inspeccion)
-      });
-      setOrdenSel(o=>({...o, estado:"inspeccion"}));
+    // Guardar inspección en backend
+    await fetch(`${API_URL}/ordenes/${ordenSel.id}/inspeccion`, {
+      method: "POST", 
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(inspeccion)
+    });
+    
+    if (armable) {
+      // Producto ARMABLE
+      setOrdenSel(o => ({ ...o, estado: "ejecucion" }));
+      setPasoServicio(3);
+      setToast({ msg: "Inspección guardada - Producto armable ✓", type: "success" });
+    } else {
+      // Producto NO ARMABLE
+      setOrdenSel(o => ({ ...o, estado: "inspeccion" }));
       setPasoServicio(4);
-      setToast({ msg:"Inspeccion guardada exitosamente", type:"success" });
-    } catch { setToast({ msg:"Error al guardar inspeccion", type:"error" }); }
-  };
+      setToast({ msg: "Producto no armable - Completar cierre con novedad", type: "warning" });
+    }
+  } catch { 
+    setToast({ msg: "Error al guardar inspección", type: "error" }); 
+  }
+};
 
   const guardarNovedad = async () => {
     if (!formNovedad.descripcion) return;
@@ -333,12 +385,82 @@ const Servicios = ({ onBack, user }) => {
     } catch { setToast({ msg:"Error al cerrar", type:"error" }); }
   };
 
+    // ============================================================
+  // NUEVO: Cerrar servicio como NO EJECUTADO
+  // ============================================================
+  const cerrarOrdenNoEjecutada = async () => {
+    // Validación 1: Debe explicar el motivo
+    if (!motivoNoEjecucion.trim()) {
+      setToast({ 
+        msg: "Debes explicar por qué no se pudo ejecutar el servicio", 
+        type: "error" 
+      });
+      return;
+    }
+    
+    // Validación 2: Debe tener foto de evidencia
+    if (!fotoNoEjecucion) {
+      setToast({ 
+        msg: "Se requiere foto de evidencia", 
+        type: "error" 
+      });
+      return;
+    }
+    
+    // Validación 3: Debe tener firma del cliente
+    if (!firmaCliente) {
+      setToast({ 
+        msg: "Se requiere firma del cliente", 
+        type: "error" 
+      });
+      return;
+    }
+
+    try {
+      // PASO 1: Guardar la novedad con el motivo
+      await fetch(`${API_URL}/novedades_servicio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orden_id: ordenSel.id,
+          tipo: "no_ejecutada",
+          descripcion: motivoNoEjecucion
+        })
+      });
+
+      // PASO 2: Cerrar la orden como NO EJECUTADA
+      await fetch(`${API_URL}/ordenes/${ordenSel.id}/cerrar-no-ejecutada`, {
+        method: "PATCH"
+      });
+
+      // PASO 3: Actualizar estado local
+      setOrdenSel(o => ({ ...o, estado: "no_ejecutada" }));
+      
+      // PASO 4: Mostrar mensaje y volver a la lista
+      setToast({ 
+        msg: "Servicio cerrado como NO EJECUTADO", 
+        type: "warning" 
+      });
+      
+      setTimeout(() => { 
+        setVista("lista"); 
+        cargar(); 
+      }, 1600);
+      
+    } catch {
+      setToast({ 
+        msg: "Error al cerrar el servicio", 
+        type: "error" 
+      });
+    }
+  };
+
   const ordFiltradas = filtroEstado ? ordenes.filter(o=>o.estado===filtroEstado) : ordenes;
   const refSel = refs.find(r=>r.id===parseInt(formOrden.referencia_id));
 
   // ---- PASOS INDICADOR ----
   const PasosIndicador = ({ paso }) => {
-    const pasos = ["Inicio","Fachada","Inspeccion","Novedades","Ejecucion","Cierre"];
+  const pasos = ["Inicio", "Inspección", "Ejecución", "Cierre"];
     return (
       <div style={{ display:"flex",alignItems:"center",gap:0,marginBottom:20 }}>
         {pasos.map((p,i) => (
@@ -453,14 +575,6 @@ const Servicios = ({ onBack, user }) => {
                 disabled={subiendoFoto}
               />
 
-              <CapturaFoto
-                etiqueta="Foto del Vehiculo (Opcional)"
-                obligatoria={false}
-                onFotoCapturada={handleFotoVehiculo}
-                existente={fotoVehiculo?.base64}
-                disabled={subiendoFoto}
-              />
-
               {fotoFachada && (
                 <div style={{ 
                   padding:"10px 12px",
@@ -553,77 +667,46 @@ const Servicios = ({ onBack, user }) => {
                   Esta referencia no tiene piezas registradas
                 </div>
               )}
-              <Btn onClick={guardarInspeccion} style={{ width:"100%",marginTop:8,padding:12 }}>
-                GUARDAR INSPECCION
-              </Btn>
+              {/* Botones: Armable / No Armable */}
+              <div style={{ 
+                display: "flex", 
+                gap: 10, 
+                marginTop: 14 
+              }}>
+                <Btn
+                  onClick={() => guardarInspeccion(true)}
+                  style={{ 
+                    flex: 1, 
+                    padding: 14, 
+                    fontSize: 14,
+                    fontWeight: 700,
+                    background: "#06D6A0",
+                    border: "none"
+                  }}
+                >
+                  ✓ PRODUCTO ARMABLE
+                </Btn>
+                
+                <Btn
+                  onClick={() => guardarInspeccion(false)}
+                  style={{ 
+                    flex: 1, 
+                    padding: 14, 
+                    fontSize: 14,
+                    fontWeight: 700,
+                    background: "#EF4444",
+                    border: "none"
+                  }}
+                >
+                  ✗ NO ARMABLE
+                </Btn>
+              </div>
             </Card>
           </div>
         )}
 
-        {/* PASO 4: Novedades + avanzar */}
-        {pasoServicio === 4 && (
-          <Card style={{ marginBottom:14 }}>
-            <div style={{ fontWeight:700,fontSize:13,color:C.muted,marginBottom:12 }}>NOVEDADES REGISTRADAS</div>
-            {novedades.map((n,i)=>(
-              <div key={i} style={{ padding:"10px 12px",marginBottom:8,borderRadius:8,
-                background: n.tipo==="averia"?"#F59E0B10":n.tipo==="faltante"?"#EF444410":"#00B4D810",
-                border:`1px solid ${n.tipo==="averia"?"#F59E0B40":n.tipo==="faltante"?"#EF444440":"#00B4D840"}` }}>
-                <div style={{ display:"flex",justifyContent:"space-between",marginBottom:4 }}>
-                  <span style={{ fontSize:11,fontWeight:700,
-                    color:n.tipo==="averia"?"#F59E0B":n.tipo==="faltante"?"#EF4444":"#00B4D8",
-                    textTransform:"uppercase" }}>{n.tipo}</span>
-                  <span style={{ fontSize:10,color:C.muted }}>{n.accion}</span>
-                </div>
-                <div style={{ fontSize:13 }}>{n.descripcion}</div>
-              </div>
-            ))}
-            {novedades.length===0 && (
-              <div style={{ textAlign:"center",padding:16,color:C.muted,fontSize:13 }}>
-                Sin novedades adicionales registradas
-              </div>
-            )}
-            {showNovedad && (
-              <div style={{ padding:"14px",background:C.bg,borderRadius:10,border:`1px solid ${C.border}`,marginBottom:12 }}>
-                <div style={{ fontWeight:700,fontSize:12,color:C.muted,marginBottom:10 }}>NUEVA NOVEDAD</div>
-                <select value={formNovedad.tipo} onChange={e=>setFormNovedad(f=>({...f,tipo:e.target.value}))}
-                  style={{ width:"100%",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,marginBottom:8,background:"white" }}>
-                  <option value="averia">Averia / Dano</option>
-                  <option value="faltante">Pieza Faltante</option>
-                  <option value="otro">Otro</option>
-                </select>
-                <textarea value={formNovedad.descripcion} onChange={e=>setFormNovedad(f=>({...f,descripcion:e.target.value}))}
-                  placeholder="Describe la novedad en detalle..."
-                  style={{ width:"100%",minHeight:70,padding:"8px 10px",border:`1px solid ${C.border}`,
-                    borderRadius:6,fontSize:12,fontFamily:"inherit",resize:"vertical",marginBottom:8 }}/>
-                <select value={formNovedad.accion} onChange={e=>setFormNovedad(f=>({...f,accion:e.target.value}))}
-                  style={{ width:"100%",padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,marginBottom:10,background:"white" }}>
-                  <option value="cambio">Solicitar cambio de pieza</option>
-                  <option value="garantia">Solicitar garantia al proveedor</option>
-                  <option value="informativo">Solo informativo</option>
-                </select>
-                <div style={{ border:`2px dashed ${C.border}`,borderRadius:8,padding:12,textAlign:"center",marginBottom:10,background:"white" }}>
-                  <div style={{ fontSize:24,marginBottom:4 }}>[ FOTO ]</div>
-                  <div style={{ fontSize:11,color:C.muted }}>Foto evidencia (proximamente)</div>
-                </div>
-                <div style={{ display:"flex",gap:8 }}>
-                  <Btn onClick={guardarNovedad} style={{ flex:1 }}>GUARDAR</Btn>
-                  <Btn variant="ghost" onClick={()=>setShowNovedad(false)} style={{ color:C.danger }}>CANCELAR</Btn>
-                </div>
-              </div>
-            )}
-            {!showNovedad && (
-              <Btn variant="ghost" onClick={()=>setShowNovedad(true)} style={{ width:"100%",marginBottom:10 }}>
-                + AGREGAR NOVEDAD
-              </Btn>
-            )}
-            <Btn onClick={avanzarEjecucion} style={{ width:"100%",padding:12 }}>
-              INICIAR EJECUCION
-            </Btn>
-          </Card>
-        )}
-
         {/* PASO 5: Ejecucion */}
-        {pasoServicio === 5 && (
+        {pasoServicio === 3 && (
           <Card>
             <div style={{ textAlign:"center",padding:"8px 0 14px" }}>
               <div style={{ fontSize:32,marginBottom:8 }}>🛠️</div>
@@ -682,8 +765,114 @@ const Servicios = ({ onBack, user }) => {
           </Card>
         )}
 
-        {/* PASO 6: Cierre y firma */}
-        {pasoServicio === 6 && (
+        {/* PASO 4: Cierre No Ejecutado */}
+        {pasoServicio === 4 && (
+          <Card>
+            <div style={{ textAlign: "center", padding: "10px 0 16px" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>✗</div>
+              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6, color: "#EF4444" }}>
+                Servicio NO Ejecutado
+              </div>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
+                El producto no se pudo armar. Explica el motivo, adjunta evidencia y obtén la firma del cliente.
+              </div>
+            </div>
+
+            {/* Motivo */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 6 }}>
+                MOTIVO (obligatorio)
+              </div>
+              <textarea
+                value={motivoNoEjecucion}
+                onChange={e => setMotivoNoEjecucion(e.target.value)}
+                placeholder="Explica por qué no se pudo ejecutar el servicio (ej: pieza principal averiada, producto defectuoso, dimensiones incorrectas, etc.)"
+                style={{
+                  width: "100%",
+                  padding: 12,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 8,
+                  fontSize: 13,
+                  minHeight: 100,
+                  resize: "vertical",
+                  fontFamily: "inherit"
+                }}
+              />
+              {motivoNoEjecucion.trim() && (
+                <div style={{ fontSize: 11, color: "#06D6A0", marginTop: 4 }}>
+                  ✓ Motivo registrado ({motivoNoEjecucion.length} caracteres)
+                </div>
+              )}
+            </div>
+
+            {/* Foto de Evidencia */}
+            <CapturaFoto
+              etiqueta="Foto de Evidencia (obligatoria)"
+              obligatoria={true}
+              onFotoCapturada={handleFotoNoEjecucion}
+              existente={fotoNoEjecucion?.base64}
+              disabled={subiendoFoto}
+            />
+
+            {/* Firma del Cliente */}
+            <div style={{ marginTop: 14 }}>
+              <FirmaDigital
+                onFirmaCapturada={setFirmaCliente}
+                existente={firmaCliente?.base64}
+              />
+            </div>
+
+            {/* Indicador de progreso */}
+            <div style={{ 
+              padding: "12px 14px",
+              background: (motivoNoEjecucion && fotoNoEjecucion && firmaCliente) ? "#06D6A010" : "#FEF3C7",
+              border: `1px solid ${(motivoNoEjecucion && fotoNoEjecucion && firmaCliente) ? "#06D6A040" : "#F59E0B"}`,
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              color: (motivoNoEjecucion && fotoNoEjecucion && firmaCliente) ? "#06D6A0" : "#92400E",
+              marginTop: 14,
+              marginBottom: 14
+            }}>
+              {(motivoNoEjecucion && fotoNoEjecucion && firmaCliente) ? (
+                <>✓ Todo listo - Puedes cerrar el servicio</>
+              ) : (
+                <>
+                  ⚠️ Pendiente: 
+                  {!motivoNoEjecucion && " Motivo"}
+                  {!fotoNoEjecucion && " Foto"}
+                  {!firmaCliente && " Firma"}
+                </>
+              )}
+            </div>
+
+            {/* Botón para cerrar como NO EJECUTADO */}
+            <Btn
+              onClick={cerrarOrdenNoEjecutada}
+              style={{
+                width: "100%",
+                padding: 14,
+                fontSize: 15,
+                fontWeight: 700,
+                background: "#EF4444",
+                border: "none",
+                opacity: (motivoNoEjecucion && fotoNoEjecucion && firmaCliente) ? 1 : 0.5,
+                cursor: (motivoNoEjecucion && fotoNoEjecucion && firmaCliente) ? "pointer" : "not-allowed"
+              }}
+              disabled={!motivoNoEjecucion || !fotoNoEjecucion || !firmaCliente}
+            >
+              {(motivoNoEjecucion && fotoNoEjecucion && firmaCliente)
+                ? "✗ CERRAR COMO NO EJECUTADO"
+                : "⚠️ Completa todos los campos"}
+            </Btn>
+          </Card>
+        )}
+
+
+
+
+        {/* PASO 5: Cierre y firma */}
+        {pasoServicio === 5 && (
           <Card>
             <div style={{ fontWeight:700,fontSize:13,color:C.muted,marginBottom:16 }}>
               CIERRE DEL SERVICIO
