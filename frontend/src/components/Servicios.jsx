@@ -98,6 +98,12 @@ const Servicios = ({ onBack, user }) => {
     num_factura:"", observaciones:"", fecha_programada:""
   });
 
+  // Volver a lista: recargar solo si hubo cambio de estado en la orden
+  const volverALista = (recargar = false) => {
+    setVista("lista");
+    if (recargar) cargar();
+  };
+
   const cargar = async () => {
     setLoading(true);
     try {
@@ -126,15 +132,15 @@ const Servicios = ({ onBack, user }) => {
       });
       if (res.ok) {
         setToast({ msg:"Orden creada exitosamente", type:"success" });
-        setTimeout(() => { setVista("lista"); cargar(); }, 1400);
+        setTimeout(() => { volverALista(true); }, 1400);
       } else { const e=await res.json(); setToast({ msg:e.detail||"Error", type:"error" }); }
     } catch { setToast({ msg:"Error de conexion", type:"error" }); }
   };
 
   const abrirOrden = async (ord) => {
   setOrdenSel(ord);
-  
-  // Cargar piezas de la referencia para inspección
+
+  // Cargar piezas de la referencia para inspección (sincrono, ya está en memoria)
   if (ord.referencia_id) {
     const refData = refs.find(r => r.id === ord.referencia_id);
     if (refData?.piezas) {
@@ -148,43 +154,33 @@ const Servicios = ({ onBack, user }) => {
     }
   }
 
-  // ============================================================
-  // NUEVO: Cargar fotos y novedades existentes
-  // ============================================================
-  try {
-    const [fotos, novs] = await Promise.all([
-      fetch(`${API_URL}/ordenes/${ord.id}/fotos`)
-        .then(r => r.json())
-        .catch(() => []),
-      fetch(`${API_URL}/ordenes/${ord.id}/detalle`)
-        .then(r => r.json())
-        .then(d => d.novedades || [])
-        .catch(() => [])
-    ]);
-    setFotosOrden(fotos);    // ← Guarda las fotos
-    setNovedades(novs);       // ← Guarda las novedades
-  } catch { }
-
-  // ============================================================
-  // NUEVO: Determinar paso según estado
-  // ============================================================
+  // Determinar paso y navegar INMEDIATAMENTE (sin esperar red)
   let paso = 1;
-  if (ord.estado === "pendiente") paso = 1;
+  if (ord.estado === "pendiente")     paso = 1;
   else if (ord.estado === "en_curso") paso = 2;
-  else if (ord.estado === "inspeccion") paso = 3;
-  else if (ord.estado === "ejecucion") paso = 4;  // ← Cambió de 5 a 4
-  else if (ord.estado === "cerrada" || ord.estado === "no_ejecutada") paso = 5;  // ← Cambió
+  else if (ord.estado === "inspeccion") paso = 2;
+  else if (ord.estado === "ejecucion")  paso = 3;
+  else if (ord.estado === "cerrada" || ord.estado === "no_ejecutada") paso = 5;
 
   setPasoServicio(paso);
-  
-  // ============================================================
-  // NUEVO: Si está cerrada, ir a vista de reporte
-  // ============================================================
+  setFotosOrden([]);
+  setNovedades([]);
   setVista(
-    ord.estado === "cerrada" || ord.estado === "no_ejecutada" 
-      ? "reporte"   // ← Vista de reporte
-      : "servicio"  // ← Vista de servicio normal
+    ord.estado === "cerrada" || ord.estado === "no_ejecutada"
+      ? "reporte"
+      : "servicio"
   );
+
+  // Cargar fotos y novedades en segundo plano (no bloquea la navegación)
+  if (ord.estado === "cerrada" || ord.estado === "no_ejecutada") {
+    Promise.all([
+      fetch(`${API_URL}/ordenes/${ord.id}/fotos`).then(r => r.json()).catch(() => []),
+      fetch(`${API_URL}/ordenes/${ord.id}/detalle`).then(r => r.json()).then(d => d.novedades || []).catch(() => [])
+    ]).then(([fotos, novs]) => {
+      setFotosOrden(Array.isArray(fotos) ? fotos : []);
+      setNovedades(Array.isArray(novs) ? novs : []);
+    }).catch(() => {});
+  }
 };
 
   const iniciarOrden = async () => {
@@ -196,8 +192,8 @@ const Servicios = ({ onBack, user }) => {
       } catch {}
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/iniciar?lat=${lat||0}&lng=${lng||0}`, { method:"PATCH" });
       setOrdenSel(o=>({...o, estado:"en_curso", lat_inicio:lat, lng_inicio:lng}));
-      setPasoServicio(2); // Avanzar a paso Fachada
-      setToast({ msg:"Orden iniciada - GPS registrado. Ahora captura las fotos iniciales.", type:"success" });
+      setPasoServicio(2); // Avanzar a inspeccion
+      setToast({ msg:"Orden iniciada - GPS registrado. Procede con la inspeccion.", type:"success" });
     } catch { setToast({ msg:"Error al iniciar", type:"error" }); }
   };
 
@@ -284,25 +280,6 @@ const Servicios = ({ onBack, user }) => {
   }
 };
 
-  const avanzarDesdeFachada = async () => {
-    if (!fotoFachada) {
-      setToast({ msg:"Debes capturar la foto de fachada antes de continuar", type:"error" });
-      return;
-    }
-    
-    try {
-      // Actualizar estado en backend (endpoint a crear)
-      // await fetch(`${API_URL}/ordenes/${ordenSel.id}/fachada`, { method:"PATCH" });
-      
-      // Por ahora solo actualizamos estado local
-      setOrdenSel(o=>({...o, estado:"fachada"}));
-      setPasoServicio(3);
-      setToast({ msg:"Fotos de fachada guardadas - Continuando a inspeccion", type:"success" });
-    } catch {
-      setToast({ msg:"Error al guardar foto de fachada", type:"error" });
-    }
-  };
-
   const guardarInspeccion = async (armable = true) => {
     // Validar que piezas averiadas/faltantes tengan foto
     const piezasConProblema = inspeccion.filter(p => p.estado !== "ok");
@@ -325,15 +302,15 @@ const Servicios = ({ onBack, user }) => {
     });
     
     if (armable) {
-      // Producto ARMABLE
+      // Producto ARMABLE -> paso 3 ejecucion
       setOrdenSel(o => ({ ...o, estado: "ejecucion" }));
       setPasoServicio(3);
-      setToast({ msg: "Inspección guardada - Producto armable ✓", type: "success" });
+      setToast({ msg: "Inspeccion guardada - Producto armable", type: "success" });
     } else {
-      // Producto NO ARMABLE
+      // Producto NO ARMABLE -> paso 4 cierre no ejecutado
       setOrdenSel(o => ({ ...o, estado: "inspeccion" }));
       setPasoServicio(4);
-      setToast({ msg: "Producto no armable - Completar cierre con novedad", type: "warning" });
+      setToast({ msg: "Producto no armable - Completa el cierre", type: "warning" });
     }
   } catch { 
     setToast({ msg: "Error al guardar inspección", type: "error" }); 
@@ -381,7 +358,7 @@ const Servicios = ({ onBack, user }) => {
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/cerrar`, { method:"PATCH" });
       setOrdenSel(o=>({...o, estado:"cerrada"}));
       setToast({ msg:"Servicio cerrado exitosamente - Todas las fotos y firma registradas ✓", type:"success" });
-      setTimeout(()=>{ setVista("lista"); cargar(); }, 1600);
+      setTimeout(()=>{ volverALista(true); }, 1600);
     } catch { setToast({ msg:"Error al cerrar", type:"error" }); }
   };
 
@@ -442,10 +419,7 @@ const Servicios = ({ onBack, user }) => {
         type: "warning" 
       });
       
-      setTimeout(() => { 
-        setVista("lista"); 
-        cargar(); 
-      }, 1600);
+      setTimeout(() => { volverALista(true); }, 1600);
       
     } catch {
       setToast({ 
@@ -459,8 +433,10 @@ const Servicios = ({ onBack, user }) => {
   const refSel = refs.find(r=>r.id===parseInt(formOrden.referencia_id));
 
   // ---- PASOS INDICADOR ----
-  const PasosIndicador = ({ paso }) => {
-  const pasos = ["Inicio", "Inspección", "Ejecución", "Cierre"];
+  const PasosIndicador = ({ paso, noEjecutado }) => {
+  const pasos = noEjecutado
+    ? ["Inicio", "Inspeccion", "Sin Ejecutar"]
+    : ["Inicio", "Inspeccion", "Ejecucion", "Cierre"];
     return (
       <div style={{ display:"flex",alignItems:"center",gap:0,marginBottom:20 }}>
         {pasos.map((p,i) => (
@@ -485,15 +461,264 @@ const Servicios = ({ onBack, user }) => {
     );
   };
 
+  // VISTA REPORTE - Detalle completo de orden cerrada
+  // ============================================================
+  if (vista === "reporte" && ordenSel) {
+    const est = ESTADO_ORDEN[ordenSel.estado] || ESTADO_ORDEN.cerrada;
+    const esNoEjecutada = ordenSel.estado === "no_ejecutada";
+
+    const tiposLabel = {
+      fachada:          "Fachada del inmueble",
+      pieza_averiada:   "Piezas con problemas",
+      producto_abierto: "Producto abierto",
+      producto_cerrado: "Producto cerrado",
+      cliente:          "Foto del cliente",
+      no_ejecutada:     "Evidencia no ejecutado",
+    };
+
+    const descargarPDF = async () => {
+      setDescargandoPDF(true);
+      try {
+        const res = await fetch(`${API_URL}/ordenes/${ordenSel.id}/reporte-pdf`);
+        if (!res.ok) throw new Error("Error generando PDF");
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Reporte-${ordenSel.consecutivo}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setToast({ msg: "PDF descargado correctamente", type: "success" });
+      } catch {
+        setToast({ msg: "Error al generar el PDF", type: "error" });
+      } finally {
+        setDescargandoPDF(false);
+      }
+    };
+
+    // Calcular duracion
+    const duracion = ordenSel.duracion_min
+      ? `${Math.floor(ordenSel.duracion_min / 60)}h ${Math.round(ordenSel.duracion_min % 60)}m`
+      : null;
+
+    return (
+      <div>
+        {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+        <PageHeader
+          title={`Reporte ${ordenSel.consecutivo}`}
+          subtitle={`${ordenSel.tipo_servicio?.toUpperCase()} - ${ordenSel.referencia_nombre}`}
+          onBack={() => { setVista("lista"); cargar(); }}
+          action={
+            <Btn
+              onClick={descargarPDF}
+              disabled={descargandoPDF}
+              style={{ background: C.accent, color: "#fff", fontSize: 12, padding: "9px 18px" }}
+            >
+              {descargandoPDF ? "Generando..." : "Exportar PDF"}
+            </Btn>
+          }
+        />
+
+        <div style={{ maxWidth: 680 }}>
+
+          {/* Banner de estado */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 14,
+            padding: "14px 18px", borderRadius: 12, marginBottom: 18,
+            background: est.color + "15", border: `2px solid ${est.color}40`
+          }}>
+            <div style={{ fontSize: 28 }}>{esNoEjecutada ? "✗" : "✓"}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: est.color }}>{est.label}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                {ordenSel.fecha_cierre
+                  ? `Cerrado: ${new Date(ordenSel.fecha_cierre).toLocaleString("es-CO")}`
+                  : ""}
+                {duracion ? `  ·  Duración: ${duracion}` : ""}
+              </div>
+            </div>
+            {duracion && (
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: est.color }}>{duracion}</div>
+                <div style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>DURACIÓN</div>
+              </div>
+            )}
+          </div>
+
+          {/* Datos cliente y servicio */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <Card>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 10 }}>CLIENTE</div>
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 2 }}>{ordenSel.cliente_nombre}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>{ordenSel.cliente_direccion}</div>
+              {ordenSel.cliente_telefono && (
+                <div style={{ fontSize: 12, color: C.muted }}>{ordenSel.cliente_telefono}</div>
+              )}
+              {ordenSel.num_factura && (
+                <div style={{ fontSize: 11, color: C.accent, fontWeight: 600, marginTop: 6 }}>
+                  Factura: {ordenSel.num_factura}
+                </div>
+              )}
+            </Card>
+            <Card>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 10 }}>SERVICIO</div>
+              {[
+                ["Referencia", ordenSel.referencia_nombre],
+                ["Tipo", ordenSel.tipo_servicio],
+                ["Técnico", ordenSel.tecnico_nombre || "Sin asignar"],
+                ["Creado por", ordenSel.creado_por || "-"],
+              ].map(([lbl, val]) => (
+                <div key={lbl} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, color: C.muted }}>{lbl}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{val}</span>
+                </div>
+              ))}
+            </Card>
+          </div>
+
+          {/* Timeline */}
+          <Card style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 12 }}>LÍNEA DE TIEMPO</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {[
+                { label: "Orden creada", fecha: ordenSel.fecha_creacion, color: "#94A3B8", show: true },
+                { label: "Servicio iniciado (GPS)", fecha: ordenSel.fecha_inicio, color: C.accent, show: !!ordenSel.fecha_inicio },
+                { label: esNoEjecutada ? "Cerrado como NO EJECUTADO" : "Servicio completado", fecha: ordenSel.fecha_cierre, color: esNoEjecutada ? "#EF4444" : "#06D6A0", show: !!ordenSel.fecha_cierre },
+              ].filter(e => e.show).map((e, i, arr) => (
+                <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ width: 12, height: 12, borderRadius: "50%", background: e.color, marginTop: 2, flexShrink: 0 }} />
+                    {i < arr.length - 1 && (
+                      <div style={{ width: 2, height: 24, background: C.border, margin: "2px 0" }} />
+                    )}
+                  </div>
+                  <div style={{ paddingBottom: i < arr.length - 1 ? 8 : 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: e.color }}>{e.label}</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>
+                      {e.fecha ? new Date(e.fecha).toLocaleString("es-CO") : ""}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {ordenSel.lat_inicio && ordenSel.lng_inicio && (
+              <div style={{ marginTop: 10, padding: "8px 10px", background: C.bg, borderRadius: 6, fontSize: 11, color: C.muted }}>
+                GPS inicio: {parseFloat(ordenSel.lat_inicio).toFixed(4)}, {parseFloat(ordenSel.lng_inicio).toFixed(4)}
+              </div>
+            )}
+          </Card>
+
+          {/* Galeria de fotos */}
+          {fotosOrden.length > 0 && (
+            <Card style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 14 }}>
+                EVIDENCIA FOTOGRÁFICA ({fotosOrden.length} foto{fotosOrden.length !== 1 ? "s" : ""})
+              </div>
+              {["fachada", "pieza_averiada", "producto_abierto", "producto_cerrado", "cliente", "no_ejecutada"].map(tipo => {
+                const fts = fotosOrden.filter(f => f.tipo === tipo);
+                if (!fts.length) return null;
+                return (
+                  <div key={tipo} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 8 }}>
+                      {tiposLabel[tipo] || tipo}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {fts.map((f, idx) => (
+                        <a key={idx} href={f.url} target="_blank" rel="noreferrer">
+                          <img src={f.url} alt={tipo}
+                            style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 8,
+                              border: `2px solid ${C.border}`, cursor: "pointer",
+                              transition: "transform 0.15s" }}
+                            onMouseEnter={e => e.target.style.transform = "scale(1.05)"}
+                            onMouseLeave={e => e.target.style.transform = "scale(1)"}
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* Inspeccion de piezas */}
+          {novedades.filter(n => n.tipo !== "no_ejecutada").length > 0 && (
+            <Card style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 12 }}>
+                NOVEDADES REGISTRADAS
+              </div>
+              {novedades.filter(n => n.tipo !== "no_ejecutada").map((n, i) => {
+                const col = n.tipo === "averia" ? "#F59E0B" : n.tipo === "faltante" ? "#EF4444" : "#00B4D8";
+                return (
+                  <div key={i} style={{ padding: "10px 12px", marginBottom: 8, borderRadius: 8,
+                    background: col + "10", border: `1px solid ${col}30` }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: col, textTransform: "uppercase", marginBottom: 4 }}>
+                      {n.tipo}
+                    </div>
+                    <div style={{ fontSize: 13 }}>{n.descripcion}</div>
+                    {n.accion && n.accion !== "informativo" && (
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Acción: {n.accion}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* Motivo no ejecutado */}
+          {esNoEjecutada && novedades.filter(n => n.tipo === "no_ejecutada").length > 0 && (
+            <Card style={{ marginBottom: 14, borderLeft: "4px solid #EF4444" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#EF4444", marginBottom: 8 }}>
+                MOTIVO NO EJECUTADO
+              </div>
+              <div style={{ fontSize: 13 }}>
+                {novedades.find(n => n.tipo === "no_ejecutada")?.descripcion}
+              </div>
+            </Card>
+          )}
+
+          {/* Observaciones */}
+          {ordenSel.observaciones && (
+            <Card style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 8 }}>OBSERVACIONES</div>
+              <div style={{ fontSize: 13, color: C.text }}>{ordenSel.observaciones}</div>
+            </Card>
+          )}
+
+          {/* Botones finales */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+            <Btn
+              onClick={descargarPDF}
+              disabled={descargandoPDF}
+              style={{ flex: 1, padding: 14, background: C.dark, color: "#fff", fontSize: 13 }}
+            >
+              {descargandoPDF ? "Generando PDF..." : "Descargar Reporte PDF"}
+            </Btn>
+            <Btn
+              variant="ghost"
+              onClick={() => { setVista("lista"); cargar(); }}
+              style={{ padding: "14px 20px", fontSize: 13 }}
+            >
+              Volver
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
   // ---- VISTA SERVICIO (flujo tecnico) ----
   if (vista === "servicio" && ordenSel) return (
     <div>
       {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
       <PageHeader title={`Orden ${ordenSel.consecutivo}`}
         subtitle={`${ordenSel.tipo_servicio?.toUpperCase()} - ${ordenSel.referencia_nombre}`}
-        onBack={()=>{ setVista("lista"); cargar(); }} />
+        onBack={()=>{ volverALista(true); }} />
       <div style={{ maxWidth:600 }}>
-        <PasosIndicador paso={pasoServicio} />
+        <PasosIndicador paso={pasoServicio} noEjecutado={pasoServicio === 4} />
 
         {/* Info cliente */}
         <Card style={{ marginBottom:14,borderLeft:`4px solid ${(ESTADO_ORDEN[ordenSel.estado]||ESTADO_ORDEN.pendiente).color}` }}>
@@ -530,85 +755,52 @@ const Servicios = ({ onBack, user }) => {
           </div>
         </Card>
 
-        {/* PASO 1: Iniciar */}
+        {/* PASO 1: Iniciar + Foto Fachada */}
         {pasoServicio === 1 && (
-          <Card>
-            <div style={{ textAlign:"center",padding:"10px 0 16px" }}>
-              <div style={{ fontSize:32,marginBottom:8 }}>[ GPS ]</div>
-              <div style={{ fontWeight:800,fontSize:16,marginBottom:6 }}>Iniciar Orden de Servicio</div>
-              <div style={{ fontSize:13,color:C.muted,marginBottom:16,lineHeight:1.5 }}>
-                Al iniciar se registrara tu ubicacion GPS y comenzara el cronometro del servicio.
-              </div>
-              <div style={{ border:`2px dashed ${C.border}`,borderRadius:10,padding:16,marginBottom:16,background:C.bg }}>
-                <div style={{ fontSize:28,marginBottom:6 }}>[ FOTO ]</div>
-                <div style={{ fontSize:12,color:C.muted,marginBottom:8 }}>Foto de fachada del inmueble (obligatoria a futuro)</div>
-                <div style={{ display:"inline-block",padding:"8px 16px",borderRadius:8,
-                  background:C.card,border:`1px solid ${C.border}`,
-                  fontSize:12,color:C.muted,cursor:"not-allowed",opacity:0.6 }}>
-                  Capturar foto (proximamente)
-                </div>
-              </div>
-              <Btn onClick={iniciarOrden} style={{ width:"100%",padding:14,fontSize:15 }}>
-                INICIAR SERVICIO + GPS
-              </Btn>
-            </div>
-          </Card>
-        )}
-
-        {/* PASO 2: Fachada y Fotos Iniciales */}
-        {pasoServicio === 2 && (
           <div>
             <Card style={{ marginBottom:14 }}>
-              <div style={{ textAlign:"center",padding:"10px 0 16px" }}>
-                <div style={{ fontSize:32,marginBottom:8 }}>📸</div>
-                <div style={{ fontWeight:800,fontSize:16,marginBottom:6 }}>Documentacion Inicial</div>
-                <div style={{ fontSize:13,color:C.muted,marginBottom:16,lineHeight:1.5 }}>
-                  Captura fotos del sitio antes de iniciar el servicio. La foto de fachada es obligatoria.
+              <div style={{ textAlign:"center",padding:"10px 0 12px" }}>
+                <div style={{ fontSize:32,marginBottom:8 }}>[ GPS ]</div>
+                <div style={{ fontWeight:800,fontSize:16,marginBottom:6 }}>Iniciar Orden de Servicio</div>
+                <div style={{ fontSize:13,color:C.muted,lineHeight:1.5 }}>
+                  Captura la foto de fachada e inicia el servicio. Se registrara tu GPS y el cronometro.
                 </div>
               </div>
+            </Card>
 
+            <Card style={{ marginBottom:14 }}>
               <CapturaFoto
-                etiqueta="Foto de Fachada"
+                etiqueta="Foto de Fachada del Inmueble"
                 obligatoria={true}
                 onFotoCapturada={handleFotoFachada}
                 existente={fotoFachada?.base64}
                 disabled={subiendoFoto}
               />
-
               {fotoFachada && (
-                <div style={{ 
-                  padding:"10px 12px",
-                  background:"#06D6A010",
-                  border:"1px solid #06D6A040",
-                  borderRadius:8,
-                  fontSize:12,
-                  color:"#06D6A0",
-                  fontWeight:600,
-                  marginTop:8
-                }}>
-                  ✓ Foto de fachada capturada - {(fotoFachada.sizeCompressed / 1024).toFixed(1)} KB
+                <div style={{ padding:"10px 12px", background:"#06D6A010", border:"1px solid #06D6A040",
+                  borderRadius:8, fontSize:12, color:"#06D6A0", fontWeight:600, marginTop:4 }}>
+                  Foto de fachada lista ({(fotoFachada.sizeCompressed/1024).toFixed(1)} KB)
                 </div>
               )}
             </Card>
 
-            <Btn 
-              onClick={avanzarDesdeFachada} 
-              style={{ 
-                width:"100%",
-                padding:14,
-                fontSize:15,
-                opacity: fotoFachada ? 1 : 0.5,
-                cursor: fotoFachada ? "pointer" : "not-allowed"
+            <Btn
+              onClick={async () => {
+                if (!fotoFachada) {
+                  setToast({ msg:"Debes capturar la foto de fachada antes de iniciar", type:"error" }); return;
+                }
+                await iniciarOrden();
               }}
-              disabled={!fotoFachada}
+              disabled={!fotoFachada || subiendoFoto}
+              style={{ width:"100%", padding:14, fontSize:15, opacity: fotoFachada ? 1 : 0.5 }}
             >
-              CONTINUAR A INSPECCION →
+              {subiendoFoto ? "Guardando..." : fotoFachada ? "INICIAR SERVICIO + GPS" : "Captura la foto para continuar"}
             </Btn>
           </div>
         )}
 
-        {/* PASO 3: Inspeccion de piezas */}
-        {pasoServicio === 3 && (
+        {/* PASO 2: Inspeccion de piezas */}
+        {pasoServicio === 2 && (
           <div>
             <Card style={{ marginBottom:14 }}>
               <div style={{ fontWeight:700,fontSize:13,color:C.muted,marginBottom:12 }}>
@@ -705,8 +897,8 @@ const Servicios = ({ onBack, user }) => {
           </div>
         )}
 
-        {/* PASO 5: Ejecucion */}
-        {pasoServicio === 3 && (
+        {/* PASO 3: Ejecucion - fotos del trabajo */}
+        {pasoServicio === 3 && ordenSel.estado === "ejecucion" && (
           <Card>
             <div style={{ textAlign:"center",padding:"8px 0 14px" }}>
               <div style={{ fontSize:32,marginBottom:8 }}>🛠️</div>
@@ -748,7 +940,12 @@ const Servicios = ({ onBack, user }) => {
             )}
 
             <Btn 
-              onClick={()=>setPasoServicio(6)} 
+              onClick={async () => {
+                if (!fotoEjecucionAntes || !fotoEjecucionDespues) {
+                  setToast({ msg:"Debes capturar ambas fotos para continuar", type:"error" }); return;
+                }
+                setPasoServicio(5);
+              }}
               style={{ 
                 width:"100%",
                 padding:14,
@@ -759,8 +956,8 @@ const Servicios = ({ onBack, user }) => {
               disabled={!fotoEjecucionAntes || !fotoEjecucionDespues}
             >
               {(fotoEjecucionAntes && fotoEjecucionDespues) 
-                ? "CONTINUAR AL CIERRE →" 
-                : "⚠️ Captura ambas fotos para continuar"}
+                ? "CONTINUAR AL CIERRE" 
+                : "Captura ambas fotos para continuar"}
             </Btn>
           </Card>
         )}

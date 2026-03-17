@@ -137,28 +137,6 @@ class VehiculoCreate(BaseModel):
     propietario: Optional[str] = ""
     estado: Optional[str] = "activo"
     observaciones: Optional[str] = ""
-    tipo: Optional[str] = ""
-    marca: Optional[str] = ""
-    anio: Optional[int] = None
-    color: Optional[str] = ""
-    cilindraje: Optional[str] = ""
-    capacidad_carga: Optional[str] = ""
-    combustible: Optional[str] = ""
-    kilometraje: Optional[int] = 0
-    num_serie: Optional[str] = ""
-    num_motor: Optional[str] = ""
-    soat_vence: Optional[str] = ""
-    tecnomecanica_vence: Optional[str] = ""
-    seguro_vence: Optional[str] = ""
-    propietario: Optional[str] = ""
-    estado: Optional[str] = "activo"
-    observaciones: Optional[str] = ""
-
-    fecha: str
-    placa: str
-    empleados: list
-    h_inicio: Optional[str] = "08:00 AM"
-    h_fin: Optional[str] = "06:00 PM"
 
 class AsistenciaCreate(BaseModel):
     usuario: str
@@ -1532,27 +1510,54 @@ def crear_tablas_servicios(cur, conn):
 # ==================== ENDPOINTS REFERENCIAS ====================
 @app.get("/referencias")
 def get_referencias(categoria: str = None, activo: bool = None):
+    conn = None
     try:
         conn = get_conn(); cur = conn.cursor()
         crear_tablas_servicios(cur, conn)
         conditions = []
         params = []
         if categoria:
-            conditions.append("categoria = %s"); params.append(categoria)
+            conditions.append("r.categoria = %s"); params.append(categoria)
         if activo is not None:
-            conditions.append("activo = %s"); params.append(activo)
+            conditions.append("r.activo = %s"); params.append(activo)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        cur.execute(f"SELECT id,codigo,nombre,categoria,descripcion,tiempo_estimado_min,marca,modelo,foto_url,activo FROM referencias {where} ORDER BY categoria,nombre", params)
+        # Un solo JOIN - elimina el N+1
+        cur.execute(f"""
+            SELECT r.id, r.codigo, r.nombre, r.categoria, r.descripcion,
+                   r.tiempo_estimado_min, r.marca, r.modelo, r.foto_url, r.activo,
+                   p.id as pieza_id, p.nombre as pieza_nombre, p.cantidad,
+                   p.unidad, p.descripcion as pieza_desc, p.orden_display
+            FROM referencias r
+            LEFT JOIN referencia_piezas p ON p.referencia_id = r.id
+            {where}
+            ORDER BY r.categoria, r.nombre, p.orden_display, p.id
+        """, params)
         rows = cur.fetchall()
-        result = []
-        for r in rows:
-            cur.execute("SELECT id,nombre,cantidad,unidad,descripcion,orden_display FROM referencia_piezas WHERE referencia_id=%s ORDER BY orden_display,id", (r[0],))
-            piezas = [{"id":p[0],"nombre":p[1],"cantidad":p[2],"unidad":p[3],"descripcion":p[4],"orden":p[5]} for p in cur.fetchall()]
-            result.append({"id":r[0],"codigo":r[1],"nombre":r[2],"categoria":r[3],"descripcion":r[4],"tiempo_estimado_min":r[5],"marca":r[6],"modelo":r[7],"foto_url":r[8],"activo":r[9],"piezas":piezas,"total_piezas":len(piezas)})
-        release_conn(conn)
+        # Agrupar en Python
+        refs_map = {}
+        for row in rows:
+            rid = row[0]
+            if rid not in refs_map:
+                refs_map[rid] = {
+                    "id": row[0], "codigo": row[1], "nombre": row[2],
+                    "categoria": row[3], "descripcion": row[4],
+                    "tiempo_estimado_min": row[5], "marca": row[6],
+                    "modelo": row[7], "foto_url": row[8], "activo": row[9],
+                    "piezas": []
+                }
+            if row[10] is not None:  # pieza_id puede ser NULL si no hay piezas
+                refs_map[rid]["piezas"].append({
+                    "id": row[10], "nombre": row[11], "cantidad": row[12],
+                    "unidad": row[13], "descripcion": row[14], "orden": row[15]
+                })
+        result = list(refs_map.values())
+        for r in result:
+            r["total_piezas"] = len(r["piezas"])
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
 
 @app.post("/referencias")
 def crear_referencia(r: ReferenciaCreate):
@@ -1596,9 +1601,9 @@ def editar_referencia(rid: int, r: ReferenciaCreate):
 # ==================== ENDPOINTS ORDENES ====================
 @app.get("/ordenes")
 def get_ordenes(estado: str = None, tecnico_id: int = None):
+    conn = None
     try:
         conn = get_conn(); cur = conn.cursor()
-        crear_tablas_servicios(cur, conn)
         conditions = []
         params = []
         if estado:
@@ -1621,7 +1626,6 @@ def get_ordenes(estado: str = None, tecnico_id: int = None):
             {where} ORDER BY o.fecha_creacion DESC
         """, params)
         rows = cur.fetchall()
-        release_conn(conn)
         return [{
             "id":r[0],"consecutivo":r[1],"tipo_servicio":r[2],"estado":r[3],
             "cliente_nombre":r[4],"cliente_direccion":r[5],"cliente_telefono":r[6],
@@ -1637,6 +1641,8 @@ def get_ordenes(estado: str = None, tecnico_id: int = None):
         } for r in rows]
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
 
 @app.post("/ordenes")
 def crear_orden(o: OrdenCreate, creado_por: str = "admin"):
@@ -1707,38 +1713,71 @@ def guardar_inspeccion(oid: int, items: list):
 
 @app.get("/ordenes/{oid}/detalle")
 def detalle_orden(oid: int):
+    conn = None
     try:
-        conn = get_conn(); cur = conn.cursor()
+        conn = get_conn()
+        cur = conn.cursor()
         cur.execute("""
-            SELECT o.*, r.codigo, r.nombre, r.categoria, u.nombre as tecnico
+            SELECT o.id, o.consecutivo, o.tipo_servicio, o.estado,
+                   o.cliente_nombre, o.cliente_direccion, o.cliente_telefono,
+                   o.num_factura, o.observaciones,
+                   o.fecha_inicio, o.fecha_cierre, o.duracion_min,
+                   o.lat_inicio, o.lng_inicio,
+                   r.codigo as ref_codigo, r.nombre as ref_nombre, r.categoria as ref_categoria,
+                   u.nombre as tecnico
             FROM ordenes_servicio o
-            LEFT JOIN referencias r ON r.id=o.referencia_id
-            LEFT JOIN usuarios u ON u.id=o.tecnico_id
-            WHERE o.id=%s
+            LEFT JOIN referencias r ON r.id = o.referencia_id
+            LEFT JOIN usuarios u ON u.id = o.tecnico_id
+            WHERE o.id = %s
         """, (oid,))
-        o = cur.fetchone()
-        if not o: raise HTTPException(status_code=404, detail="Orden no encontrada")
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Orden no encontrada")
+
         cur.execute("SELECT * FROM inspeccion_piezas WHERE orden_id=%s ORDER BY id", (oid,))
         inspeccion = cur.fetchall()
+
         cur.execute("SELECT * FROM novedades_servicio WHERE orden_id=%s ORDER BY id", (oid,))
         novedades = cur.fetchall()
-        release_conn(conn)
+
         return {
-            "orden": dict(zip([d[0] for d in cur.description], o)) if False else {
-                "id":o[0],"consecutivo":o[1],"estado":o[3],
-                "cliente_nombre":o[4],"cliente_direccion":o[5],"cliente_telefono":o[6],
-                "num_factura":o[7],"tipo_servicio":o[2],
-                "fecha_inicio":str(o[9]) if o[9] else "","fecha_cierre":str(o[10]) if o[10] else "",
-                "duracion_min":o[11],"lat_inicio":float(o[12]) if o[12] else None,
-                "lng_inicio":float(o[13]) if o[13] else None,
-                "observaciones":o[17],"tecnico":o[-1],
-                "referencia_codigo":o[-4],"referencia_nombre":o[-3],"referencia_categoria":o[-2]
+            "orden": {
+                "id":              row[0],
+                "consecutivo":     row[1],
+                "tipo_servicio":   row[2],
+                "estado":          row[3],
+                "cliente_nombre":  row[4],
+                "cliente_direccion": row[5],
+                "cliente_telefono": row[6],
+                "num_factura":     row[7],
+                "observaciones":   row[8],
+                "fecha_inicio":    str(row[9])  if row[9]  else "",
+                "fecha_cierre":    str(row[10]) if row[10] else "",
+                "duracion_min":    row[11],
+                "lat_inicio":      float(row[12]) if row[12] else None,
+                "lng_inicio":      float(row[13]) if row[13] else None,
+                "referencia_codigo":   row[14],
+                "referencia_nombre":   row[15],
+                "referencia_categoria": row[16],
+                "tecnico":         row[17],
             },
-            "inspeccion": [{"id":i[0],"pieza_id":i[2],"nombre":i[3],"estado":i[4],"novedad":i[6],"accion":i[7]} for i in inspeccion],
-            "novedades": [{"id":n[0],"descripcion":n[2],"tipo":n[3],"accion":n[4],"timestamp":str(n[6])} for n in novedades]
+            "inspeccion": [
+                {"id": i[0], "pieza_id": i[2], "nombre": i[3], "estado": i[4],
+                 "novedad": i[6], "accion": i[7]}
+                for i in inspeccion
+            ],
+            "novedades": [
+                {"id": n[0], "descripcion": n[2], "tipo": n[3],
+                 "accion": n[4], "timestamp": str(n[6])}
+                for n in novedades
+            ]
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
 
 @app.post("/novedades_servicio")
 def crear_novedad(n: NovedadServicio):
@@ -1873,7 +1912,7 @@ def generar_reporte_pdf(orden_id: int):
                    p.nombre as tecnico_nombre
             FROM ordenes_servicio o
             LEFT JOIN referencias r ON o.referencia_id = r.id
-            LEFT JOIN personal p ON o.tecnico_id = p.id
+            LEFT JOIN usuarios p ON o.tecnico_id = p.id
             WHERE o.id = %s
         """, [orden_id])
         
@@ -2196,73 +2235,122 @@ def generar_reporte_pdf(orden_id: int):
         release_conn(conn)
  
         
-        # ============================================================
-        # ENDPOINT: Reporte completo (JSON)
-        # ============================================================
-        
-        @app.get("/ordenes/{orden_id}/reporte-completo")
-        def reporte_completo(orden_id: int):
-            """
-            Obtiene todos los datos de una orden para vista de reporte
-            """
-            conn = None
-            try:
-                conn = get_conn()
-                cur = conn.cursor()
-                
-                # Orden
-                cur.execute("SELECT * FROM ordenes_servicio WHERE id = %s", [orden_id])
-                cols = [d[0] for d in cur.description]
-                orden = dict(zip(cols, cur.fetchone() or []))
-                
-                if not orden:
-                    raise HTTPException(404, "Orden no encontrada")
-                
-                # Fotos
-                cur.execute("""
-                    SELECT id, tipo, url, timestamp, size_bytes, metadata
-                    FROM fotos_servicios
-                    WHERE orden_id = %s
-                    ORDER BY timestamp
-                """, [orden_id])
-                fotos = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
-                
-                # Inspección
-                cur.execute("""
-                    SELECT nombre_pieza, estado, novedad_descripcion, accion_solicitada
-                    FROM inspeccion_piezas
-                    WHERE orden_id = %s
-                """, [orden_id])
-                inspeccion = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
-                
-                # Novedades
-                cur.execute("""
-                    SELECT tipo, descripcion, fecha_registro
-                    FROM novedades_servicio
-                    WHERE orden_id = %s
-                    ORDER BY fecha_registro
-                """, [orden_id])
-                novedades = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
-                
-                return {
-                    "orden": orden,
-                    "fotos": fotos,
-                    "inspeccion": inspeccion,
-                    "novedades": novedades
-                }
-                
-            except Exception as e:
-                raise HTTPException(500, str(e))
-            finally:
-                release_conn(conn)
-        
+
+
 
 # ============================================================
-# ENDPOINT: Detalle de orden (con novedades)
+# ENDPOINT: Cerrar orden como no ejecutada
 # ============================================================
-@app.get("/ordenes/{orden_id}/detalle")
-def get_orden_detalle(orden_id: int):
+@app.patch("/ordenes/{orden_id}/cerrar-no-ejecutada")
+def cerrar_orden_no_ejecutada(orden_id: int):
     """
-    Obtiene el detalle completo de una orden incluyendo novedades
+    Cierra una orden con estado 'no_ejecutada'
+    Se llama cuando el tecnico determina que el producto no es armable
     """
-    return {"novedades": []}
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE ordenes_servicio
+            SET estado = 'no_ejecutada',
+                fecha_cierre = NOW(),
+                duracion_min = EXTRACT(EPOCH FROM (NOW() - COALESCE(fecha_inicio, NOW()))) / 60
+            WHERE id = %s
+        """, [orden_id])
+        conn.commit()
+        return {"ok": True, "estado": "no_ejecutada"}
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(500, f"Error: {str(e)}")
+    finally:
+        release_conn(conn)
+
+
+# ============================================================
+# ENDPOINT: Reporte completo JSON (para vista en frontend)
+# ============================================================
+@app.get("/ordenes/{orden_id}/reporte-completo")
+def reporte_completo(orden_id: int):
+    """
+    Obtiene todos los datos de una orden para la vista de reporte en el frontend.
+    Incluye: orden, fotos (URLs Supabase), inspeccion, novedades
+    """
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+
+        # Datos de la orden
+        cur.execute("""
+            SELECT o.*, r.nombre as ref_nombre, r.categoria,
+                   u.nombre as tecnico_nombre
+            FROM ordenes_servicio o
+            LEFT JOIN referencias r ON o.referencia_id = r.id
+            LEFT JOIN usuarios u ON o.tecnico_id = u.id
+            WHERE o.id = %s
+        """, [orden_id])
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Orden no encontrada")
+        cols = [d[0] for d in cur.description]
+        orden = dict(zip(cols, row))
+        # Serializar fechas
+        for k, v in orden.items():
+            if hasattr(v, "isoformat"):
+                orden[k] = v.isoformat()
+
+        # Fotos desde Supabase (URLs publicas)
+        cur.execute("""
+            SELECT id, tipo, url, timestamp, size_bytes, metadata
+            FROM fotos_servicios
+            WHERE orden_id = %s
+            ORDER BY timestamp ASC
+        """, [orden_id])
+        cols_f = [d[0] for d in cur.description]
+        fotos = []
+        for r in cur.fetchall():
+            f = dict(zip(cols_f, r))
+            if f.get("timestamp"):
+                f["timestamp"] = f["timestamp"].isoformat()
+            fotos.append(f)
+
+        # Inspeccion de piezas
+        cur.execute("""
+            SELECT nombre_pieza, estado, novedad_descripcion, accion_solicitada
+            FROM inspeccion_piezas
+            WHERE orden_id = %s
+            ORDER BY id ASC
+        """, [orden_id])
+        cols_i = [d[0] for d in cur.description]
+        inspeccion = [dict(zip(cols_i, r)) for r in cur.fetchall()]
+
+        # Novedades
+        cur.execute("""
+            SELECT id, tipo, descripcion, accion, timestamp
+            FROM novedades_servicio
+            WHERE orden_id = %s
+            ORDER BY timestamp ASC
+        """, [orden_id])
+        cols_n = [d[0] for d in cur.description]
+        novedades = []
+        for r in cur.fetchall():
+            n = dict(zip(cols_n, r))
+            if n.get("timestamp"):
+                n["timestamp"] = n["timestamp"].isoformat()
+            novedades.append(n)
+
+        return {
+            "orden": orden,
+            "fotos": fotos,
+            "inspeccion": inspeccion,
+            "novedades": novedades
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+    finally:
+        release_conn(conn)
