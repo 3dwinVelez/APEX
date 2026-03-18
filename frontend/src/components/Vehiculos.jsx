@@ -4,7 +4,14 @@ import { Card, Btn, Input, Sel, PageHeader, Toast } from "../shared/ui";
 import { TruckIcon } from "./MapaOperarios";
 import { useData } from "../context/DataContext";
 
-
+const TIPOS_VEHICULO = [
+  { tipo: "camion",      label: "Camion",       icon: "🚛" },
+  { tipo: "camioneta",   label: "Camioneta",    icon: "🚙" },
+  { tipo: "furgon",      label: "Furgon",       icon: "🚐" },
+  { tipo: "moto",        label: "Moto",         icon: "🏍" },
+  { tipo: "sedan",       label: "Sedan",        icon: "🚗" },
+  { tipo: "otro",        label: "Otro",         icon: "🚘" },
+];
 
 const Vehiculos = ({ onBack }) => {
   const [vista, setVista]       = useState("lista");
