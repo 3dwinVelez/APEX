@@ -4,6 +4,53 @@ import { Card, Btn, Input, Sel, PageHeader, Toast } from "../shared/ui";
 import { TruckIcon } from "./MapaOperarios";
 import { useData } from "../context/DataContext";
 
+const TIPOS_VEHICULO = [
+  {
+    tipo: "Camion",
+    categoria: "Carga pesada",
+    marca: "Multiple marcas",
+    combustible: "Diesel",
+    cilindraje: "6000cc+",
+    capacidad: "5 - 10 toneladas",
+    color_cat: "#EF4444"
+  },
+  {
+    tipo: "Camioneta",
+    categoria: "Carga mediana",
+    marca: "Multiple marcas",
+    combustible: "Gasolina/Diesel",
+    cilindraje: "2000cc - 3500cc",
+    capacidad: "1 - 3 toneladas",
+    color_cat: "#F59E0B"
+  },
+  {
+    tipo: "Furgon",
+    categoria: "Carga cerrada",
+    marca: "Multiple marcas",
+    combustible: "Diesel",
+    cilindraje: "2500cc - 4000cc",
+    capacidad: "2 - 5 toneladas",
+    color_cat: "#8B5CF6"
+  },
+  {
+    tipo: "Moto",
+    categoria: "Mensajeria",
+    marca: "Multiple marcas",
+    combustible: "Gasolina",
+    cilindraje: "125cc - 250cc",
+    capacidad: "hasta 50kg",
+    color_cat: "#06B6D4"
+  },
+  {
+    tipo: "Otro",
+    categoria: "Otro tipo",
+    marca: "",
+    combustible: "",
+    cilindraje: "",
+    capacidad: "",
+    color_cat: "#6B7280"
+  }
+];
 
 
 const Vehiculos = ({ onBack }) => {
