@@ -10,6 +10,8 @@ import Servicios     from "./components/Servicios";
 import Referencias   from "./components/Referencias";
 import Reportes      from "./components/Reportes";
 import Roles         from "./components/Roles";
+import ConfiguracionNomina from "./components/ConfiguracionNomina";
+import Nomina        from "./components/Nomina";
 import { can, firstAllowedPage } from "./shared/permissions";
 
 // ============================================================
@@ -84,6 +86,8 @@ export default function App() {
     vehiculos:   <Vehiculos    onBack={() => setPage("dashboard")} user={user} />,
     referencias: <Referencias  onBack={() => setPage("dashboard")} user={user} />,
     horarios:    <Horarios     onBack={() => setPage("dashboard")} user={user} />,
+    configuracion: <ConfiguracionNomina onBack={() => setPage("dashboard")} user={user} />,
+    nomina:      <Nomina       onBack={() => setPage("dashboard")} user={user} />,
     reportes:    <Reportes     onBack={() => setPage("dashboard")} user={user} />,
   };
 

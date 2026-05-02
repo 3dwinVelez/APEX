@@ -4,6 +4,7 @@ import { Card, Btn, Input, Sel, PageHeader, Toast, Alert } from "../shared/ui";
 import CapturaFoto from "./CapturaFoto";
 import FirmaDigital from "./FirmaDigital";
 import { can } from "../shared/permissions";
+import { useData } from "../context/DataContext";
 
 const ESTADO_ORDEN = {
   pendiente:     { color: "#94A3B8", label: "Pendiente",      icon: "○" },
@@ -58,6 +59,7 @@ const subirFoto = async (ordenId, tipo, fotoData, metadata = {}) => {
 };
 
 const Servicios = ({ onBack, user }) => {
+  const { getData, invalidateCache } = useData();
   const [vista, setVista]       = useState("lista");
   const [ordenes, setOrdenes]   = useState([]);
   const [refs, setRefs]         = useState([]);
@@ -105,16 +107,16 @@ const Servicios = ({ onBack, user }) => {
   // Volver a lista: recargar solo si hubo cambio de estado en la orden
   const volverALista = (recargar = false) => {
     setVista("lista");
-    if (recargar) cargar();
+    if (recargar) cargar(true);
   };
 
-  const cargar = async () => {
+  const cargar = async (force = false) => {
     setLoading(true);
     try {
       const [o, r, p] = await Promise.all([
-        fetch(`${API_URL}/ordenes`).then(x=>x.json()),
-        fetch(`${API_URL}/referencias?activo=true`).then(x=>x.json()),
-        fetch(`${API_URL}/personal`).then(x=>x.json()),
+        force ? fetch(`${API_URL}/ordenes`).then(x=>x.json()) : getData("ordenes", "/ordenes"),
+        force ? fetch(`${API_URL}/referencias?activo=true`).then(x=>x.json()) : getData("referencias", "/referencias?activo=true"),
+        force ? fetch(`${API_URL}/personal`).then(x=>x.json()) : getData("personal", "/personal"),
       ]);
       setOrdenes(Array.isArray(o)?o:[]);
       setRefs(Array.isArray(r)?r:[]);
@@ -136,6 +138,7 @@ const Servicios = ({ onBack, user }) => {
         body: JSON.stringify({ ...formOrden, referencia_id:parseInt(formOrden.referencia_id), tecnico_id:formOrden.tecnico_id?parseInt(formOrden.tecnico_id):null })
       });
       if (res.ok) {
+        invalidateCache("ordenes");
         setToast({ msg:"Orden creada exitosamente", type:"success" });
         setTimeout(() => { volverALista(true); }, 1400);
       } else { const e=await res.json(); setToast({ msg:e.detail||"Error", type:"error" }); }
@@ -197,6 +200,7 @@ const Servicios = ({ onBack, user }) => {
         lat=pos.coords.latitude; lng=pos.coords.longitude;
       } catch {}
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/iniciar?lat=${lat||0}&lng=${lng||0}`, { method:"PATCH" });
+      invalidateCache("ordenes");
       setOrdenSel(o=>({...o, estado:"en_curso", lat_inicio:lat, lng_inicio:lng}));
       setPasoServicio(2); // Avanzar a inspeccion
       setToast({ msg:"Orden iniciada - GPS registrado. Procede con la inspeccion.", type:"success" });
@@ -364,6 +368,7 @@ const Servicios = ({ onBack, user }) => {
     try {
       // Aqui se guardarian todas las fotos y firma en el backend
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/cerrar`, { method:"PATCH" });
+      invalidateCache("ordenes");
       setOrdenSel(o=>({...o, estado:"cerrada"}));
       setToast({ msg:"Servicio cerrado exitosamente - Todas las fotos y firma registradas ✓", type:"success" });
       setTimeout(()=>{ volverALista(true); }, 1600);
@@ -418,6 +423,7 @@ const Servicios = ({ onBack, user }) => {
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/cerrar-no-ejecutada`, {
         method: "PATCH"
       });
+      invalidateCache("ordenes");
 
       // PASO 3: Actualizar estado local
       setOrdenSel(o => ({ ...o, estado: "no_ejecutada" }));

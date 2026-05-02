@@ -39,6 +39,16 @@ export const PERMISSION_CATALOG = [
     label: "Reportes",
     actions: ["access", "view", "export"],
   },
+  {
+    key: "configuracion",
+    label: "Configuracion",
+    actions: ["access", "view", "create", "edit"],
+  },
+  {
+    key: "nomina",
+    label: "Nomina",
+    actions: ["access", "view", "create", "edit", "export"],
+  },
 ];
 
 export const ACTION_LABELS = {
@@ -93,6 +103,6 @@ export function can(user, moduleKey, action = "access") {
 }
 
 export function firstAllowedPage(user) {
-  const preferred = ["dashboard", "servicios", "horarios", "vehiculos", "personal", "referencias", "reportes", "roles"];
+  const preferred = ["dashboard", "servicios", "horarios", "vehiculos", "personal", "referencias", "configuracion", "nomina", "reportes", "roles"];
   return preferred.find((page) => can(user, page, "access")) || "dashboard";
 }

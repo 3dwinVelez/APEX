@@ -24,8 +24,9 @@ const Dashboard = ({ onNavigate, user }) => {
     { id: "personal",    icon: "Personal", title: "Personal",          sub: "Empleados y tecnicos",    color: "#8B5CF6",  ok: true },
     { id: "roles",       icon: "Roles", title: "Roles y Perfiles",     sub: "Permisos y accesos",      color: "#22C55E",  ok: true },
     { id: "referencias", icon: "Referencias", title: "Referencias",       sub: "Catalogo de equipos",     color: "#EC4899",  ok: true },
+    { id: "configuracion", icon: "Cfg", title: "Configuracion",       sub: "Parametros de nomina",    color: "#2563EB",  ok: true },
+    { id: "nomina",      icon: "Nomina", title: "Nomina Quincenal",   sub: "Procesos y liquidacion",   color: "#14B8A6",  ok: true },
     { id: "reportes",    icon: "Reportes", title: "Reportes",          sub: "Estadisticas y KPIs",     color: C.accent,   ok: true },
-    { id: "nomina",      icon: "nom", title: "Nomina",            sub: "Proximamente",            color: C.muted,    ok: false },
     { id: "kpis",        icon: "kpi", title: "KPIs Avanzados",    sub: "Proximamente",            color: C.muted,    ok: false },
   ];
 
