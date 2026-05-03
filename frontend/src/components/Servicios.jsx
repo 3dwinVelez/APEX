@@ -1345,7 +1345,7 @@ const Servicios = ({ onBack, user }) => {
       {loading ? (
         <div style={{ textAlign: "center", padding: 48, color: C.muted, fontSize: 13 }}>Cargando ordenes...</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: 14 }}>
           {ordFiltradas.map((ord, i) => {
             const est = ESTADO_ORDEN[ord.estado] || ESTADO_ORDEN.pendiente;
             const mins = ord.duracion_min;

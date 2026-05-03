@@ -287,84 +287,84 @@ const Login = ({ onLogin }) => {
     setLoading(false);
   };
 
+  const isMobileLogin = window.innerWidth < 768;
+
   return (
     <div style={{
       minHeight: "100vh", background: "#111111",
-      display: "flex", fontFamily: "'Poppins', sans-serif",
+      display: "flex",
+      flexDirection: isMobileLogin ? "column" : "row",
+      fontFamily: "'Poppins', sans-serif",
       position: "relative", overflow: "hidden"
     }}>
       {/* Fondo decorativo */}
       <div style={{
         position: "absolute", inset: 0, pointerEvents: "none",
-        background: "radial-gradient(ellipse at 20% 50%, rgba(37,99,235,0.15) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.08) 0%, transparent 50%)"
+        background: "radial-gradient(ellipse at 20% 50%, rgba(37,99,235,0.15) 0%, transparent 60%)"
       }} />
 
-      {/* Panel izquierdo — branding */}
-      <div style={{
-        flex: 1, display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center",
-        padding: 48, position: "relative",
-        background: "linear-gradient(135deg, #0a0a0a 0%, #111827 50%, #0f1729 100%)",
-      }}>
-        {/* Grid decorativo de fondo */}
+      {/* Panel branding — oculto en mobile */}
+      {!isMobileLogin && (
         <div style={{
-          position: "absolute", inset: 0, pointerEvents: "none",
-          backgroundImage: "linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }} />
-        {/* Circulo de luz */}
-        <div style={{
-          position: "absolute", top: "30%", left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 400, height: 400, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%)",
-          pointerEvents: "none",
-        }} />
-
-        <div style={{ position: "relative", zIndex: 1, textAlign: "center", width: "100%", maxWidth: 340 }}>
-          {/* Logo grande */}
-          <img src={logo} alt="APEX" style={{ width: 280, objectFit: "contain", marginBottom: 8 }} />
-
-          {/* Linea separadora */}
-          <div style={{ width: 48, height: 2, background: "#2563EB", borderRadius: 2, margin: "20px auto" }} />
-
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", fontWeight: 400, letterSpacing: 1, marginBottom: 48 }}>
-            Sistema de gestion operativa
-          </div>
-
-          {/* Features */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {[
-              { icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", label: "Seguro y confiable", sub: "Datos protegidos con JWT" },
-              { icon: "M13 10V3L4 14h7v7l9-11h-7z", label: "Tiempo real", sub: "GPS y marcaciones en vivo" },
-              { icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", label: "Reportes inteligentes", sub: "KPIs y estadisticas avanzadas" },
-            ].map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, textAlign: "left" }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10,
-                  background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.25)",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d={item.icon} />
-                  </svg>
+          flex: 1, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          padding: 48, position: "relative",
+          background: "linear-gradient(135deg, #0a0a0a 0%, #111827 50%, #0f1729 100%)",
+        }}>
+          <div style={{
+            position: "absolute", inset: 0, pointerEvents: "none",
+            backgroundImage: "linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+          }} />
+          <div style={{ position: "relative", zIndex: 1, textAlign: "center", width: "100%", maxWidth: 340 }}>
+            <img src={logo} alt="APEX" style={{ width: 260, objectFit: "contain", marginBottom: 8 }} />
+            <div style={{ width: 48, height: 2, background: "#2563EB", borderRadius: 2, margin: "20px auto" }} />
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", letterSpacing: 1, marginBottom: 40 }}>
+              Sistema de gestion operativa
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {[
+                { icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", label: "Seguro y confiable", sub: "Datos protegidos con JWT" },
+                { icon: "M13 10V3L4 14h7v7l9-11h-7z", label: "Tiempo real", sub: "GPS y marcaciones en vivo" },
+                { icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10", label: "Reportes inteligentes", sub: "KPIs y estadisticas avanzadas" },
+              ].map((item, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, textAlign: "left" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10,
+                    background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.25)",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d={item.icon} />
+                    </svg>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{item.label}</div>
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 1 }}>{item.sub}</div>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{item.label}</div>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 1 }}>{item.sub}</div>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Panel derecho — formulario */}
+      {/* Panel formulario */}
       <div style={{
-        width: 420, background: "#fff", display: "flex",
-        flexDirection: "column", justifyContent: "center", padding: "48px 40px",
+        width: isMobileLogin ? "100%" : 420,
+        minHeight: isMobileLogin ? "100vh" : "auto",
+        background: "#fff",
+        display: "flex", flexDirection: "column", justifyContent: "center",
+        padding: isMobileLogin ? "40px 24px" : "48px 40px",
         position: "relative",
       }}>
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 24, fontWeight: 700, color: "#111111", marginBottom: 6 }}>Iniciar sesion</div>
+        {/* Logo solo en mobile */}
+        {isMobileLogin && (
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <img src={logo} alt="APEX" style={{ width: 160, objectFit: "contain", filter: "invert(1)" }} />
+          </div>
+        )}
+
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: isMobileLogin ? 22 : 24, fontWeight: 700, color: "#111111", marginBottom: 6 }}>Iniciar sesion</div>
           <div style={{ fontSize: 13, color: "#6B7280" }}>Ingresa tus credenciales de acceso</div>
         </div>
 
@@ -375,11 +375,10 @@ const Login = ({ onLogin }) => {
             placeholder="Tu ID de acceso"
             onKeyDown={e => e.key === "Enter" && handleLogin()}
             style={{
-              width: "100%", padding: "12px 14px", borderRadius: 10,
-              border: "1.5px solid #E5E7EB", fontSize: 13,
+              width: "100%", padding: "14px", borderRadius: 10,
+              border: "1.5px solid #E5E7EB", fontSize: 16,
               fontFamily: "'Poppins', sans-serif", color: "#111111",
               outline: "none", boxSizing: "border-box",
-              transition: "border-color 0.2s"
             }}
             onFocus={e => e.target.style.borderColor = "#2563EB"}
             onBlur={e => e.target.style.borderColor = "#E5E7EB"}
@@ -393,8 +392,8 @@ const Login = ({ onLogin }) => {
             placeholder="••••••••"
             onKeyDown={e => e.key === "Enter" && handleLogin()}
             style={{
-              width: "100%", padding: "12px 14px", borderRadius: 10,
-              border: "1.5px solid #E5E7EB", fontSize: 13,
+              width: "100%", padding: "14px", borderRadius: 10,
+              border: "1.5px solid #E5E7EB", fontSize: 16,
               fontFamily: "'Poppins', sans-serif", color: "#111111",
               outline: "none", boxSizing: "border-box",
             }}
@@ -412,16 +411,15 @@ const Login = ({ onLogin }) => {
         )}
 
         <button onClick={handleLogin} disabled={loading} style={{
-          width: "100%", padding: "13px", borderRadius: 10,
+          width: "100%", padding: "15px", borderRadius: 10,
           background: loading ? "#93C5FD" : "#2563EB", border: "none",
-          color: "#fff", fontSize: 13, fontWeight: 600,
+          color: "#fff", fontSize: 15, fontWeight: 600,
           fontFamily: "'Poppins', sans-serif", cursor: loading ? "not-allowed" : "pointer",
-          transition: "background 0.2s",
         }}>
           {loading ? "Verificando..." : "Ingresar al sistema"}
         </button>
 
-        <div style={{ marginTop: "auto", paddingTop: 32, fontSize: 10, color: "#9CA3AF", textAlign: "center" }}>
+        <div style={{ marginTop: 32, fontSize: 10, color: "#9CA3AF", textAlign: "center" }}>
           APEX ERP · SCJ Soluciones Logisticas · v2.0
         </div>
       </div>

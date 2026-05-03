@@ -128,7 +128,7 @@ const Dashboard = ({ onNavigate, user }) => {
       </div>
 
       {/* KPIs */}
-      <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap", position: "relative", zIndex: 1 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12, marginBottom: 20, flexWrap: "wrap", position: "relative", zIndex: 1 }}>
         <KPICard
           label="Servicios Hoy" value={stats.ordenes_hoy} color="#2563EB"
           sub="ordenes activas"
@@ -152,7 +152,7 @@ const Dashboard = ({ onNavigate, user }) => {
       </div>
 
       {/* GRAFICOS */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20, position: "relative", zIndex: 1 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, marginBottom: 20, position: "relative", zIndex: 1 }}>
 
         {/* Grafico servicios semana */}
         <Card style={{ padding: "18px 20px" }}>

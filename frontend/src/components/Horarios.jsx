@@ -1126,7 +1126,7 @@ const Horarios = ({ onBack, user }) => {
           </div>
         </div>
       ) : (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: window.innerWidth < 768 ? "1fr" : "repeat(2, 1fr)", gap: 12 }}>
         {Object.entries(MARCAS_CFG).map(([tipo, m]) => {
           const habilitada = marcaHabilitada(tipo);
           const yaHizo     = ultimaMarca &&
@@ -1140,6 +1140,8 @@ const Horarios = ({ onBack, user }) => {
                 background: yaHizo ? m.color + "08" : habilitada ? "#fff" : "#F9FAFB",
                 transition: "all 0.2s", position: "relative",
                 boxShadow: habilitada && !yaHizo ? `0 2px 12px ${m.color}20` : "none",
+                minHeight: window.innerWidth < 768 ? 80 : "auto",
+                padding: window.innerWidth < 768 ? "16px" : "20px",
               }}
               onMouseEnter={e => { if (habilitada && !yaHizo) e.currentTarget.style.transform = "translateY(-2px)"; }}
               onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
