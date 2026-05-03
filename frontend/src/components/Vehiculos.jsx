@@ -3,6 +3,7 @@ import { C, API_URL } from "../shared/constants";
 import { Card, Btn, Input, Sel, PageHeader, Toast } from "../shared/ui";
 import { TruckIcon } from "./MapaOperarios";
 import { useData } from "../context/DataContext";
+import { can } from "../shared/permissions";
 
 const TIPOS_VEHICULO = [
   {
@@ -53,7 +54,7 @@ const TIPOS_VEHICULO = [
 ];
 
 
-const Vehiculos = ({ onBack }) => {
+const Vehiculos = ({ onBack, user }) => {
   const [vista, setVista]       = useState("lista");
   const [lista, setLista]       = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -68,6 +69,9 @@ const Vehiculos = ({ onBack }) => {
     soat_vence:"", tecnomecanica_vence:"", seguro_vence:"",
     propietario:"", observaciones:"", estado:"activo"
   });
+  const canCreateVehiculos = can(user, "vehiculos", "create");
+  const canEditVehiculos = can(user, "vehiculos", "edit");
+  const isReadOnlyForm = (vehSel && !canEditVehiculos) || (!vehSel && !canCreateVehiculos);
 
   const cargar = async () => {
     setLoading(true);
@@ -96,6 +100,10 @@ const Vehiculos = ({ onBack }) => {
   };
 
   const guardar = async () => {
+    if (isReadOnlyForm) {
+      setToast({ msg: "No tienes permisos para modificar vehiculos", type: "error" });
+      return;
+    }
     if (!form.placa) { setToast({ msg: "La placa es obligatoria", type: "error" }); return; }
     try {
       const url = vehSel ? `${API_URL}/vehiculos/${vehSel.id}` : `${API_URL}/vehiculos`;
@@ -218,10 +226,24 @@ const Vehiculos = ({ onBack }) => {
           if (paso === 2 && !vehSel) { setPaso(1); setTipoSel(null); }
           else { setVista("lista"); setVehSel(null); setPaso(1); setTipoSel(null); }
         }} />
+      {isReadOnlyForm && (
+        <div style={{
+          marginBottom: 14,
+          padding: "10px 14px",
+          borderRadius: 10,
+          background: "#F59E0B10",
+          border: "1px solid #F59E0B30",
+          color: "#9A6700",
+          fontSize: 12,
+          fontWeight: 700
+        }}>
+          Modo solo lectura. Puedes revisar la informacion, pero no modificarla.
+        </div>
+      )}
 
       {/* PASO 1: Seleccion de tipo */}
       {paso === 1 && (
-        <div>
+        <div style={isReadOnlyForm ? { opacity: 0.55, pointerEvents: "none", filter: "grayscale(0.15)" } : {}}>
           <p style={{ color:C.muted, marginBottom:20 }}>Selecciona el tipo de vehiculo para precargar sus datos tecnicos</p>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))", gap:14 }}>
             {TIPOS_VEHICULO.map(t => (
@@ -250,6 +272,7 @@ const Vehiculos = ({ onBack }) => {
       {/* PASO 2: Datos del vehiculo */}
       {paso === 2 && (
         <div style={{ maxWidth:640 }}>
+          <div style={isReadOnlyForm ? { opacity: 0.55, pointerEvents: "none", filter: "grayscale(0.15)" } : {}}>
           {tipoSel && (
             <Card style={{ marginBottom:16, padding:0, overflow:"hidden", borderTop:`4px solid ${tipoSel.color_cat || C.accent}` }}>
               <div style={{ display:"flex", alignItems:"center", gap:0 }}>
@@ -324,9 +347,10 @@ const Vehiculos = ({ onBack }) => {
             </div>
           </Card>
 
-          <Btn onClick={guardar} style={{ width:"100%", padding:"14px" }}>
+          <Btn onClick={guardar} disabled={isReadOnlyForm} style={{ width:"100%", padding:"14px" }}>
             {vehSel ? "GUARDAR CAMBIOS" : "REGISTRAR VEHICULO"}
           </Btn>
+          </div>
         </div>
       )}
     </div>
@@ -352,12 +376,16 @@ const Vehiculos = ({ onBack }) => {
           <h2 style={{ margin:0, fontSize:22, fontWeight:800 }}>Flota de Vehiculos</h2>
           <p style={{ margin:0, fontSize:13, color:C.muted }}>{lista.length} vehiculo(s) registrado(s)</p>
         </div>
-        <Btn onClick={() => { setPaso(1); setTipoSel(null); setVehSel(null);
+        <Btn
+          onClick={() => { setPaso(1); setTipoSel(null); setVehSel(null);
           setForm({ placa:"",modelo:"",tipo:"",marca:"",anio:new Date().getFullYear(),color:"",
             cilindraje:"",capacidad_carga:"",combustible:"",kilometraje:"",num_serie:"",
             num_motor:"",soat_vence:"",tecnomecanica_vence:"",seguro_vence:"",
             propietario:"",observaciones:"",estado:"activo" });
-          setVista("form"); }}>+ NUEVO VEHICULO</Btn>
+          setVista("form"); }}
+          disabled={!canCreateVehiculos}
+          title={!canCreateVehiculos ? "Este perfil no puede crear vehiculos" : ""}
+        >+ NUEVO VEHICULO</Btn>
       </div>
 
       {loading ? (

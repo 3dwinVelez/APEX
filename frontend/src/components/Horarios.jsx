@@ -3,6 +3,7 @@ import { C, API_URL } from "../shared/constants";
 import { Card, Btn, PageHeader, Alert } from "../shared/ui";
 import MapaOperarios from "./MapaOperarios";
 import { useData } from "../context/DataContext";
+import { can } from "../shared/permissions";
 
 // ============================================================
 // CONSTANTES
@@ -35,6 +36,16 @@ const MOTIVOS_EXTRA = [
   "Orden adicional de servicio",
   "Otro (detallar en descripcion)",
 ];
+
+const TIME_OPTIONS_12H = Array.from({ length: 48 }, (_, index) => {
+  const totalMinutes = index * 30;
+  const hour24 = Math.floor(totalMinutes / 60);
+  const minutes = String(totalMinutes % 60).padStart(2, "0");
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const label = `${String(hour12).padStart(2, "0")}:${minutes} ${suffix}`;
+  return { value: label, label };
+});
 
 // ============================================================
 // HELPERS
@@ -306,8 +317,12 @@ const ModalJustificacion = ({ minutos_extra, onGuardar, onCerrar, loading }) => 
 // HORARIOS - COMPONENTE PRINCIPAL
 // ============================================================
 const Horarios = ({ onBack, user }) => {
+  const { getData } = useData();
   // Nombre efectivo del usuario: nombre del perfil o username como fallback
   const nombreUsuario = (user?.nombre || user?.username || "").trim();
+  const canCreateHorarios = can(user, "horarios", "create");
+  const canEditHorarios = can(user, "horarios", "edit");
+  const horariosReadOnlyStyle = { opacity: 0.55, pointerEvents: "none", filter: "grayscale(0.15)" };
   const [vista,          setVista]          = useState("menu");
   const [rutas,          setRutas]          = useState([]);
   const [personal,       setPersonal]       = useState([]);
@@ -357,11 +372,24 @@ const Horarios = ({ onBack, user }) => {
     : ORDEN_MARCAS[ORDEN_MARCAS.indexOf(ultimaMarca) + 1];
 
   useEffect(() => {
-    fetch(API_URL + "/personal").then(r=>r.json()).then(d=>setPersonal(Array.isArray(d)?d:[])).catch(()=>{});
-    fetch(API_URL + "/vehiculos").then(r=>r.json()).then(d=>setVehiculos(Array.isArray(d)?d:[])).catch(()=>{});
+    getData("personal", "/personal").then(d=>setPersonal(Array.isArray(d)?d:[])).catch(()=>{});
+    getData("vehiculos", "/vehiculos").then(d=>setVehiculos(Array.isArray(d)?d:[])).catch(()=>{});
     fetch(API_URL + "/novedades-tipo").then(r=>r.json()).then(d=>setNovedadesTipo(Array.isArray(d)?d:[])).catch(()=>{});
     fetch(API_URL + "/rutas").then(r=>r.json()).then(d=>setRutas(Array.isArray(d)?d:[])).catch(()=>{});
-  }, []);
+  }, [getData]);
+
+  const getEmpleadoClave = (empleado) =>
+    ((empleado?.username || empleado?.nombre || "").trim());
+
+  const getEmpleadoNombreVisible = (valor) => {
+    const normalized = (valor || "").trim().toLowerCase();
+    const match = personal.find((item) => {
+      const nombre = (item?.nombre || "").trim().toLowerCase();
+      const username = (item?.username || "").trim().toLowerCase();
+      return normalized === nombre || normalized === username;
+    });
+    return match?.nombre || valor;
+  };
 
   // Cargar rutas asignadas al usuario - funcion reutilizable
   const cargarRutasUsuario = () => {
@@ -371,13 +399,24 @@ const Horarios = ({ onBack, user }) => {
       .then(r=>r.json())
       .then(d => {
         const todas = Array.isArray(d) ? d : [];
-        const nombreUser    = nombreUsuario.toLowerCase();
-        const usernameActual = (user?.username || "").trim().toLowerCase();
+        const currentAliases = new Set(
+          [
+            nombreUsuario,
+            (user?.username || "").trim(),
+            (user?.nombre || "").trim(),
+            (() => {
+              const match = personal.find((item) => ((item?.username || "").trim().toLowerCase()) === ((user?.username || "").trim().toLowerCase()));
+              return match?.nombre || "";
+            })(),
+          ]
+            .map((value) => (value || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
         const mias = todas.filter(r => {
           const equipo = r.equipo || r.empleados || [];
           return equipo.some(e => {
             const ev = (e || "").trim().toLowerCase();
-            return ev === nombreUser || ev === usernameActual;
+            return currentAliases.has(ev);
           });
         });
         setRutasUsuario(mias);
@@ -394,7 +433,7 @@ const Horarios = ({ onBack, user }) => {
       .catch(()=>{});
   };
 
-  useEffect(() => { cargarRutasUsuario(); }, [nombreUsuario]);
+  useEffect(() => { cargarRutasUsuario(); }, [nombreUsuario, personal, user]);
 
   useEffect(() => {
     if (vista !== "marcacion") return;
@@ -490,6 +529,10 @@ const Horarios = ({ onBack, user }) => {
 
   // ---- MARCACION ----
   const realizarMarcacion = async (tipo) => {
+    if (!canCreateHorarios) {
+      setMsg({ tipo: "error", texto: "No tienes permisos para registrar marcaciones." });
+      return;
+    }
     if (!marcaHabilitada(tipo)) return;
     if (!marcForm.usuario) { setMsg({ tipo: "error", texto: "Usuario no identificado" }); return; }
     // BLOQUEO: sin ruta asignada no se puede marcar
@@ -589,6 +632,10 @@ const Horarios = ({ onBack, user }) => {
 
   // ---- PLANEACION ----
   const crearRuta = async () => {
+    if (!canCreateHorarios) {
+      setMsg({ tipo: "error", texto: "No tienes permisos para crear rutas." });
+      return;
+    }
     if (!rutaForm.placa) { setMsg({ tipo: "error", texto: "Selecciona un vehiculo" }); return; }
     if (empSeleccionados.length === 0) { setMsg({ tipo: "error", texto: "Agrega al menos un empleado" }); return; }
     setLoading(true);
@@ -876,6 +923,21 @@ const Horarios = ({ onBack, user }) => {
       <PageHeader title="Marcacion de Personal"
         subtitle="Registra tu jornada laboral" onBack={() => { setVista("menu"); setGpsEstado("idle"); setGpsCoordsActual(null); cargarUltimaMarca(); }} />
       {msg && <Alert tipo={msg.tipo} texto={msg.texto} onClose={() => setMsg(null)} />}
+      {!canCreateHorarios && (
+        <div style={{
+          marginBottom: 14,
+          padding: "10px 14px",
+          borderRadius: 10,
+          background: "#F59E0B10",
+          border: "1px solid #F59E0B30",
+          color: "#9A6700",
+          fontSize: 12,
+          fontWeight: 700
+        }}>
+          Modo solo lectura. Puedes revisar tu jornada, pero no registrar marcaciones.
+        </div>
+      )}
+      <div style={!canCreateHorarios ? horariosReadOnlyStyle : {}}>
 
       {/* Banner GPS - solo visible si la jornada no esta cerrada */}
       {ultimaMarca !== "CIERRE" && <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 16,
@@ -1154,6 +1216,7 @@ const Horarios = ({ onBack, user }) => {
           )}
         </Card>
       )}
+      </div>
     </div>
   );
 
@@ -1165,6 +1228,21 @@ const Horarios = ({ onBack, user }) => {
       <PageHeader title="Planeacion de Rutas" subtitle="Crear y asignar rutas del dia"
         onBack={() => { setVista("menu"); setGpsEstado("idle"); setGpsCoordsActual(null); cargarUltimaMarca(); }} />
       {msg && <Alert tipo={msg.tipo} texto={msg.texto} onClose={() => setMsg(null)} />}
+      {!canCreateHorarios && (
+        <div style={{
+          marginBottom: 14,
+          padding: "10px 14px",
+          borderRadius: 10,
+          background: "#F59E0B10",
+          border: "1px solid #F59E0B30",
+          color: "#9A6700",
+          fontSize: 12,
+          fontWeight: 700
+        }}>
+          Modo solo lectura. Puedes revisar rutas, pero no crear ni asignar.
+        </div>
+      )}
+      <div style={!canCreateHorarios ? horariosReadOnlyStyle : {}}>
       <Card style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 11,
           letterSpacing: 0.5, color: C.muted }}>NUEVA RUTA</div>
@@ -1214,26 +1292,52 @@ const Horarios = ({ onBack, user }) => {
         {/* Fila 2: Hora inicio + Hora fin + Tolerancia + Viaticos */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
           gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 700, color: C.muted,
+              display: "block", marginBottom: 4 }}>HORA INICIO</label>
+            <select
+              value={rutaForm.h_inicio}
+              onChange={e => setRutaForm(f => ({ ...f, h_inicio: e.target.value }))}
+              style={{ width:"100%", padding:"9px 10px",
+                border:"1px solid "+C.border, borderRadius:8,
+                fontSize:12, boxSizing:"border-box", background:C.bg }}
+            >
+              {TIME_OPTIONS_12H.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 700, color: C.muted,
+              display: "block", marginBottom: 4 }}>HORA FIN</label>
+            <select
+              value={rutaForm.h_fin}
+              onChange={e => setRutaForm(f => ({ ...f, h_fin: e.target.value }))}
+              style={{ width:"100%", padding:"9px 10px",
+                border:"1px solid "+C.border, borderRadius:8,
+                fontSize:12, boxSizing:"border-box", background:C.bg }}
+            >
+              {TIME_OPTIONS_12H.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
           {[
-            { label:"HORA INICIO", key:"h_inicio",           placeholder:"08:00 AM", type:"text"   },
-            { label:"HORA FIN",    key:"h_fin",              placeholder:"05:00 PM", type:"text"   },
-            { label:"TOLERANCIA (min)", key:"tolerancia_minutos", placeholder:"15",  type:"number" },
-            { label:"VIATICOS ($)",     key:"viaticos",           placeholder:"0",   type:"number" },
+            { label:"TOLERANCIA (min)", key:"tolerancia_minutos", placeholder:"15" },
+            { label:"VIATICOS ($)",     key:"viaticos",           placeholder:"0"  },
           ].map(field => (
             <div key={field.key}>
               <label style={{ fontSize: 10, fontWeight: 700, color: C.muted,
                 display: "block", marginBottom: 4 }}>{field.label}</label>
               <input
-                type={field.type}
+                type="number"
                 value={rutaForm[field.key]}
                 placeholder={field.placeholder}
                 onChange={e => setRutaForm(f => ({
                   ...f,
-                  [field.key]: field.type === "number"
-                    ? (field.key === "viaticos"
-                        ? parseFloat(e.target.value)||0
-                        : parseInt(e.target.value)||0)
-                    : e.target.value
+                  [field.key]: field.key === "viaticos"
+                    ? parseFloat(e.target.value)||0
+                    : parseInt(e.target.value)||0
                 }))}
                 style={{ width:"100%", padding:"9px 10px",
                   border:"1px solid "+C.border, borderRadius:8,
@@ -1267,11 +1371,12 @@ const Horarios = ({ onBack, user }) => {
             <div style={{ display: "grid",
               gridTemplateColumns: "repeat(auto-fill, minmax(150px,1fr))", gap: 7 }}>
               {personal.map(p => {
-                const sel = empSeleccionados.includes(p.nombre);
+                const claveEmpleado = getEmpleadoClave(p);
+                const sel = empSeleccionados.includes(claveEmpleado);
                 return (
-                  <div key={p.nombre}
+                  <div key={claveEmpleado}
                     onClick={()=>setEmpSeleccionados(s=>
-                      sel ? s.filter(x=>x!==p.nombre) : [...s, p.nombre]
+                      sel ? s.filter(x=>x!==claveEmpleado) : [...s, claveEmpleado]
                     )}
                     style={{ padding:"8px 12px", borderRadius:8, cursor:"pointer",
                       fontSize:12, fontWeight:600, transition:"all 0.15s",
@@ -1315,7 +1420,7 @@ const Horarios = ({ onBack, user }) => {
               <div>
                 <div style={{ fontWeight:700, fontSize:13 }}>{r.placa} - {r.fecha}</div>
                 <div style={{ fontSize:11, color:C.muted }}>
-                  {(r.equipo || r.empleados || []).join(", ")}
+                  {(r.equipo || r.empleados || []).map(getEmpleadoNombreVisible).join(", ")}
                 </div>
                 {(r.h_inicio || r.h_fin) && (
                   <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>
@@ -1330,6 +1435,7 @@ const Horarios = ({ onBack, user }) => {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 
@@ -1347,11 +1453,14 @@ const Horarios = ({ onBack, user }) => {
           { id:"monitor",    label:"Monitor en Vivo",      desc:"Timeline GPS, horas trabajadas y horas extra",     color:"#F59E0B" },
           { id:"mapa",       label:"Mapa GPS",             desc:"Seguimiento en vivo e historico de operarios",     color:"#8B5CF6" },
         ].map(item => (
-          <Card key={item.id} onClick={() => {
+          <Card key={item.id} onClick={
+              ((item.id === "marcacion" || item.id === "planeacion") && !canCreateHorarios)
+                ? null
+                : () => {
               if (item.id === "marcacion") { cargarRutasUsuario(); cargarUltimaMarca(); }
               setVista(item.id);
             }}
-            style={{ cursor:"pointer", borderBottom:"3px solid "+item.color,
+            style={{ cursor: ((item.id === "marcacion" || item.id === "planeacion") && !canCreateHorarios) ? "not-allowed" : "pointer", opacity: ((item.id === "marcacion" || item.id === "planeacion") && !canCreateHorarios) ? 0.55 : 1, borderBottom:"3px solid "+item.color,
               transition:"transform 0.15s" }}>
             <div style={{ width:38, height:38, borderRadius:10,
               background:item.color+"14", display:"flex", alignItems:"center",

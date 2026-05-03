@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { C, API_URL } from "../shared/constants";
 import { Card, Btn, Input, Sel, PageHeader, Toast } from "../shared/ui";
 import { useData } from "../context/DataContext";
+import { can } from "../shared/permissions";
 
 const CATEGORIAS_REF = [
   { id: "muebles",       label: "Muebles",          icon: "" },
@@ -15,7 +16,7 @@ const CATEGORIAS_REF = [
   { id: "otros",         label: "Otros",             icon: "" },
 ];
 
-const Referencias = ({ onBack }) => {
+const Referencias = ({ onBack, user }) => {
   const [vista, setVista]     = useState("lista");
   const [lista, setLista]     = useState([]);
   const [loading, setLoading] = useState(false);
@@ -27,6 +28,9 @@ const Referencias = ({ onBack }) => {
     codigo:"", nombre:"", categoria:"muebles", descripcion:"",
     tiempo_estimado_min:60, marca:"", modelo:"", activo:true
   });
+  const canCreateReferencias = can(user, "referencias", "create");
+  const canEditReferencias = can(user, "referencias", "edit");
+  const isReadOnlyForm = (refSel && !canEditReferencias) || (!refSel && !canCreateReferencias);
 
   const cargar = async () => {
     setLoading(true);
@@ -45,6 +49,7 @@ const Referencias = ({ onBack }) => {
   const updPieza = (i, field, val) => setPiezas(p => p.map((x,idx) => idx===i ? {...x,[field]:val} : x));
 
   const guardar = async () => {
+    if (isReadOnlyForm) { setToast({ msg:"No tienes permisos para modificar referencias", type:"error" }); return; }
     if (!form.nombre || !form.codigo) { setToast({ msg:"Codigo y nombre son obligatorios", type:"error" }); return; }
     if (piezas.some(p => !p.nombre)) { setToast({ msg:"Todas las piezas deben tener nombre", type:"error" }); return; }
     try {
@@ -169,6 +174,21 @@ const Referencias = ({ onBack }) => {
       <PageHeader title={refSel?"Editar Referencia":"Nueva Referencia"}
         onBack={()=>{ setVista("lista"); setRefSel(null); }} />
       <div style={{ maxWidth:680 }}>
+        {isReadOnlyForm && (
+          <div style={{
+            marginBottom: 14,
+            padding: "10px 14px",
+            borderRadius: 10,
+            background: "#F59E0B10",
+            border: "1px solid #F59E0B30",
+            color: "#9A6700",
+            fontSize: 12,
+            fontWeight: 700
+          }}>
+            Modo solo lectura. Puedes revisar la informacion, pero no modificarla.
+          </div>
+        )}
+        <div style={isReadOnlyForm ? { opacity: 0.55, pointerEvents: "none", filter: "grayscale(0.15)" } : {}}>
 
         {/* Datos basicos */}
         <Card style={{ marginBottom:14 }}>
@@ -268,9 +288,10 @@ const Referencias = ({ onBack }) => {
           </div>
         </Card>
 
-        <Btn onClick={guardar} style={{ width:"100%",padding:14 }}>
+        <Btn onClick={guardar} disabled={isReadOnlyForm} style={{ width:"100%",padding:14 }}>
           {refSel ? "GUARDAR CAMBIOS" : "CREAR REFERENCIA"}
         </Btn>
+        </div>
       </div>
     </div>
   );
@@ -284,7 +305,11 @@ const Referencias = ({ onBack }) => {
           <h2 style={{ margin:0,fontSize:22,fontWeight:800 }}>Maestro de Referencias</h2>
           <p style={{ margin:0,fontSize:13,color:C.muted }}>{listFiltrada.length} referencia(s) registrada(s)</p>
         </div>
-        <Btn onClick={()=>{ setRefSel(null); setForm({codigo:"",nombre:"",categoria:"muebles",descripcion:"",tiempo_estimado_min:60,marca:"",modelo:"",activo:true}); setPiezas([{nombre:"",cantidad:1,unidad:"und",descripcion:""}]); setVista("form"); }}>
+        <Btn
+          onClick={()=>{ setRefSel(null); setForm({codigo:"",nombre:"",categoria:"muebles",descripcion:"",tiempo_estimado_min:60,marca:"",modelo:"",activo:true}); setPiezas([{nombre:"",cantidad:1,unidad:"und",descripcion:""}]); setVista("form"); }}
+          disabled={!canCreateReferencias}
+          title={!canCreateReferencias ? "Este perfil no puede crear referencias" : ""}
+        >
           + NUEVA REFERENCIA
         </Btn>
       </div>

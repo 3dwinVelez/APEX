@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { C, API_URL } from "../shared/constants";
 import { Card, PageHeader, KPI } from "../shared/ui";
 import logo from "../assets/logo_scj.png";
-import { useData } from "../context/DataContext";
+import { can } from "../shared/permissions";
 
 
-const Dashboard = ({ onNavigate }) => {
+const Dashboard = ({ onNavigate, user }) => {
   const [stats, setStats] = useState({ ordenes_hoy:0, personal_activo:0, vehiculos_activos:0, novedades:0 });
   useEffect(() => {
     fetch(`${API_URL}/stats`).then(r=>r.json()).then(d=>{
@@ -22,15 +22,18 @@ const Dashboard = ({ onNavigate }) => {
     { id: "horarios",    icon: "Horarios", title: "Control Horarios",  sub: "Asistencia y turnos",     color: C.success,  ok: true },
     { id: "vehiculos",   icon: "Vehiculos", title: "Gestion de Flota",  sub: "Vehiculos registrados",   color: C.warning,  ok: true },
     { id: "personal",    icon: "Personal", title: "Personal",          sub: "Empleados y tecnicos",    color: "#8B5CF6",  ok: true },
+    { id: "roles",       icon: "Roles", title: "Roles y Perfiles",     sub: "Permisos y accesos",      color: "#22C55E",  ok: true },
     { id: "referencias", icon: "Referencias", title: "Referencias",       sub: "Catalogo de equipos",     color: "#EC4899",  ok: true },
+    { id: "configuracion", icon: "Cfg", title: "Configuracion",       sub: "Parametros de nomina",    color: "#2563EB",  ok: true },
+    { id: "nomina",      icon: "Nomina", title: "Nomina Quincenal",   sub: "Procesos y liquidacion",   color: "#14B8A6",  ok: true },
     { id: "reportes",    icon: "Reportes", title: "Reportes",          sub: "Estadisticas y KPIs",     color: C.accent,   ok: true },
-    { id: "nomina",      icon: "nom", title: "Nomina",            sub: "Proximamente",            color: C.muted,    ok: false },
     { id: "kpis",        icon: "kpi", title: "KPIs Avanzados",    sub: "Proximamente",            color: C.muted,    ok: false },
   ];
 
   const fecha = new Date().toLocaleDateString("es-CO", {
     weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
+  const visibleModules = modules.filter(m => m.ok ? can(user, m.id, "access") : true);
 
   return (
     <div style={{ position: "relative" }}>
@@ -51,7 +54,7 @@ const Dashboard = ({ onNavigate }) => {
         MODULOS DEL SISTEMA
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
-        {modules.map(m => (
+        {visibleModules.map(m => (
           <Card
             key={m.id}
             onClick={m.ok ? () => onNavigate(m.id) : null}

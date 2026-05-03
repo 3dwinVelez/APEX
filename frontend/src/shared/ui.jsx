@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { API_URL, C } from "./constants";
 import logo from "../assets/logo_scj.png";
+import { fullPermissions } from "./permissions";
 
 const Badge = ({ children, color = C.success }) => (
   <span style={{
@@ -268,11 +269,14 @@ const Login = ({ onLogin }) => {
     }
     setLoading(true);
     setError("");
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const res = await fetch(API_URL + "/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (res.ok && data.usuario) {
@@ -280,15 +284,26 @@ const Login = ({ onLogin }) => {
       } else {
         setError(data.detail || "Credenciales incorrectas");
       }
-    } catch {
+    } catch (error) {
       // Modo demo si no hay backend conectado aun
-      if (password === "1234") {
-        onLogin({ id: 1, nombre: username, username, rol: "admin" });
+      if (error?.name === "AbortError") {
+        setError("El servidor tardo demasiado en responder. Revisa el backend.");
+      } else if (password === "1234") {
+        onLogin({
+          id: 1,
+          nombre: username,
+          username,
+          rol: "admin",
+          role_nombre: "Administrador",
+          permissions: fullPermissions(),
+        });
       } else {
         setError("Error de conexion. Demo: usa contrasena 1234");
       }
+    } finally {
+      clearTimeout(timeoutId);
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

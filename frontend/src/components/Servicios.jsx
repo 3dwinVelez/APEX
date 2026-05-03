@@ -3,6 +3,8 @@ import { C, API_URL } from "../shared/constants";
 import { Card, Btn, Input, Sel, PageHeader, Toast, Alert } from "../shared/ui";
 import CapturaFoto from "./CapturaFoto";
 import FirmaDigital from "./FirmaDigital";
+import { can } from "../shared/permissions";
+import { useData } from "../context/DataContext";
 
 const ESTADO_ORDEN = {
   pendiente:     { color: "#94A3B8", label: "Pendiente",      icon: "○" },
@@ -57,6 +59,7 @@ const subirFoto = async (ordenId, tipo, fotoData, metadata = {}) => {
 };
 
 const Servicios = ({ onBack, user }) => {
+  const { getData, invalidateCache } = useData();
   const [vista, setVista]       = useState("lista");
   const [ordenes, setOrdenes]   = useState([]);
   const [refs, setRefs]         = useState([]);
@@ -97,20 +100,23 @@ const Servicios = ({ onBack, user }) => {
     cliente_nombre:"", cliente_direccion:"", cliente_telefono:"",
     num_factura:"", observaciones:"", fecha_programada:""
   });
+  const canCreateServicios = can(user, "servicios", "create");
+  const canEditServicios = can(user, "servicios", "edit");
+  const serviceReadOnlyStyle = { opacity: 0.55, pointerEvents: "none", filter: "grayscale(0.15)" };
 
   // Volver a lista: recargar solo si hubo cambio de estado en la orden
   const volverALista = (recargar = false) => {
     setVista("lista");
-    if (recargar) cargar();
+    if (recargar) cargar(true);
   };
 
-  const cargar = async () => {
+  const cargar = async (force = false) => {
     setLoading(true);
     try {
       const [o, r, p] = await Promise.all([
-        fetch(`${API_URL}/ordenes`).then(x=>x.json()),
-        fetch(`${API_URL}/referencias?activo=true`).then(x=>x.json()),
-        fetch(`${API_URL}/personal`).then(x=>x.json()),
+        force ? fetch(`${API_URL}/ordenes`).then(x=>x.json()) : getData("ordenes", "/ordenes"),
+        force ? fetch(`${API_URL}/referencias?activo=true`).then(x=>x.json()) : getData("referencias", "/referencias?activo=true"),
+        force ? fetch(`${API_URL}/personal`).then(x=>x.json()) : getData("personal", "/personal"),
       ]);
       setOrdenes(Array.isArray(o)?o:[]);
       setRefs(Array.isArray(r)?r:[]);
@@ -122,6 +128,7 @@ const Servicios = ({ onBack, user }) => {
   useEffect(() => { cargar(); }, []);
 
   const crearOrden = async () => {
+    if (!canCreateServicios) { setToast({ msg:"No tienes permisos para crear ordenes", type:"error" }); return; }
     if (!formOrden.referencia_id||!formOrden.cliente_nombre||!formOrden.cliente_direccion) {
       setToast({ msg:"Referencia, cliente y direccion son obligatorios", type:"error" }); return;
     }
@@ -131,6 +138,7 @@ const Servicios = ({ onBack, user }) => {
         body: JSON.stringify({ ...formOrden, referencia_id:parseInt(formOrden.referencia_id), tecnico_id:formOrden.tecnico_id?parseInt(formOrden.tecnico_id):null })
       });
       if (res.ok) {
+        invalidateCache("ordenes");
         setToast({ msg:"Orden creada exitosamente", type:"success" });
         setTimeout(() => { volverALista(true); }, 1400);
       } else { const e=await res.json(); setToast({ msg:e.detail||"Error", type:"error" }); }
@@ -184,6 +192,7 @@ const Servicios = ({ onBack, user }) => {
 };
 
   const iniciarOrden = async () => {
+    if (!canEditServicios) { setToast({ msg:"No tienes permisos para editar servicios", type:"error" }); return; }
     try {
       let lat=null, lng=null;
       try {
@@ -191,6 +200,7 @@ const Servicios = ({ onBack, user }) => {
         lat=pos.coords.latitude; lng=pos.coords.longitude;
       } catch {}
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/iniciar?lat=${lat||0}&lng=${lng||0}`, { method:"PATCH" });
+      invalidateCache("ordenes");
       setOrdenSel(o=>({...o, estado:"en_curso", lat_inicio:lat, lng_inicio:lng}));
       setPasoServicio(2); // Avanzar a inspeccion
       setToast({ msg:"Orden iniciada - GPS registrado. Procede con la inspeccion.", type:"success" });
@@ -281,6 +291,7 @@ const Servicios = ({ onBack, user }) => {
 };
 
   const guardarInspeccion = async (armable = true) => {
+    if (!canEditServicios) { setToast({ msg:"No tienes permisos para editar servicios", type:"error" }); return; }
     // Validar que piezas averiadas/faltantes tengan foto
     const piezasConProblema = inspeccion.filter(p => p.estado !== "ok");
     const faltanFotos = piezasConProblema.filter(p => !fotosInspeccion[p.pieza_id]);
@@ -337,6 +348,7 @@ const Servicios = ({ onBack, user }) => {
   };
 
   const cerrarOrden = async () => {
+    if (!canEditServicios) { setToast({ msg:"No tienes permisos para editar servicios", type:"error" }); return; }
     // Validar firma y foto del cliente
     if (!firmaCliente) {
       setToast({ msg: "Se requiere la firma del cliente para cerrar el servicio", type: "error" });
@@ -356,6 +368,7 @@ const Servicios = ({ onBack, user }) => {
     try {
       // Aqui se guardarian todas las fotos y firma en el backend
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/cerrar`, { method:"PATCH" });
+      invalidateCache("ordenes");
       setOrdenSel(o=>({...o, estado:"cerrada"}));
       setToast({ msg:"Servicio cerrado exitosamente - Todas las fotos y firma registradas ✓", type:"success" });
       setTimeout(()=>{ volverALista(true); }, 1600);
@@ -366,6 +379,7 @@ const Servicios = ({ onBack, user }) => {
   // NUEVO: Cerrar servicio como NO EJECUTADO
   // ============================================================
   const cerrarOrdenNoEjecutada = async () => {
+    if (!canEditServicios) { setToast({ msg:"No tienes permisos para editar servicios", type:"error" }); return; }
     // Validación 1: Debe explicar el motivo
     if (!motivoNoEjecucion.trim()) {
       setToast({ 
@@ -409,6 +423,7 @@ const Servicios = ({ onBack, user }) => {
       await fetch(`${API_URL}/ordenes/${ordenSel.id}/cerrar-no-ejecutada`, {
         method: "PATCH"
       });
+      invalidateCache("ordenes");
 
       // PASO 3: Actualizar estado local
       setOrdenSel(o => ({ ...o, estado: "no_ejecutada" }));
@@ -717,6 +732,21 @@ const Servicios = ({ onBack, user }) => {
       <PageHeader title={`Orden ${ordenSel.consecutivo}`}
         subtitle={`${ordenSel.tipo_servicio?.toUpperCase()} - ${ordenSel.referencia_nombre}`}
         onBack={()=>{ volverALista(true); }} />
+      {!canEditServicios && (
+        <div style={{
+          marginBottom: 14,
+          padding: "10px 14px",
+          borderRadius: 10,
+          background: "#F59E0B10",
+          border: "1px solid #F59E0B30",
+          color: "#9A6700",
+          fontSize: 12,
+          fontWeight: 700,
+          maxWidth: 600
+        }}>
+          Modo solo lectura. Puedes revisar el servicio, pero no modificarlo.
+        </div>
+      )}
       <div style={{ maxWidth:600 }}>
         <PasosIndicador paso={pasoServicio} noEjecutado={pasoServicio === 4} />
 
@@ -755,6 +785,7 @@ const Servicios = ({ onBack, user }) => {
           </div>
         </Card>
 
+        <div style={!canEditServicios ? serviceReadOnlyStyle : {}}>
         {/* PASO 1: Iniciar + Foto Fachada */}
         {pasoServicio === 1 && (
           <div>
@@ -1157,6 +1188,7 @@ const Servicios = ({ onBack, user }) => {
             </Btn>
           </Card>
         )}
+        </div>
       </div>
     </div>
   );
@@ -1167,6 +1199,21 @@ const Servicios = ({ onBack, user }) => {
       {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
       <PageHeader title="Nueva Orden de Servicio" onBack={()=>setVista("lista")} />
       <div style={{ maxWidth:580 }}>
+        {!canCreateServicios && (
+          <div style={{
+            marginBottom: 14,
+            padding: "10px 14px",
+            borderRadius: 10,
+            background: "#F59E0B10",
+            border: "1px solid #F59E0B30",
+            color: "#9A6700",
+            fontSize: 12,
+            fontWeight: 700
+          }}>
+            Modo solo lectura. Puedes revisar el formulario, pero no crear ordenes.
+          </div>
+        )}
+        <div style={!canCreateServicios ? serviceReadOnlyStyle : {}}>
         <Card style={{ marginBottom:14 }}>
           <div style={{ fontWeight:700,fontSize:13,color:C.muted,marginBottom:12 }}>REFERENCIA Y TIPO</div>
           <Sel label="REFERENCIA *" value={String(formOrden.referencia_id)} onChange={v=>setFormOrden(f=>({...f,referencia_id:v}))}
@@ -1202,6 +1249,7 @@ const Servicios = ({ onBack, user }) => {
         </Card>
 
         <Btn onClick={crearOrden} style={{ width:"100%",padding:14 }}>CREAR ORDEN DE SERVICIO</Btn>
+        </div>
       </div>
     </div>
   );
@@ -1222,7 +1270,7 @@ const Servicios = ({ onBack, user }) => {
           <h2 style={{ margin:0,fontSize:22,fontWeight:800 }}>Ordenes de Servicio</h2>
           <p style={{ margin:0,fontSize:13,color:C.muted }}>{ordFiltradas.length} orden(es)</p>
         </div>
-        <Btn onClick={()=>{ setFormOrden({referencia_id:"",tecnico_id:"",tipo_servicio:"montaje",cliente_nombre:"",cliente_direccion:"",cliente_telefono:"",num_factura:"",observaciones:"",fecha_programada:""}); setVista("nueva"); }}>
+        <Btn onClick={()=>{ setFormOrden({referencia_id:"",tecnico_id:"",tipo_servicio:"montaje",cliente_nombre:"",cliente_direccion:"",cliente_telefono:"",num_factura:"",observaciones:"",fecha_programada:""}); setVista("nueva"); }} disabled={!canCreateServicios} title={!canCreateServicios ? "Este perfil no puede crear ordenes" : ""}>
           + NUEVA ORDEN
         </Btn>
       </div>

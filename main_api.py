@@ -1,10 +1,11 @@
 import os
 import json
-from datetime import datetime
-from fastapi import FastAPI, HTTPException
+from datetime import datetime, timedelta, time
+import re
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from io import BytesIO
 from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 import requests
 
 load_dotenv()
@@ -91,6 +93,852 @@ SUPABASE_BUCKET = "fotos-servicios"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+PERMISSION_CATALOG = {
+    "dashboard": ["access", "view"],
+    "personal": ["access", "view", "create", "edit"],
+    "roles": ["access", "view", "create", "edit"],
+    "servicios": ["access", "view", "create", "edit", "export"],
+    "horarios": ["access", "view", "create", "edit", "approve"],
+    "vehiculos": ["access", "view", "create", "edit"],
+    "referencias": ["access", "view", "create", "edit"],
+    "reportes": ["access", "view", "export"],
+    "configuracion": ["access", "view", "create", "edit"],
+    "nomina": ["access", "view", "create", "edit", "export"],
+}
+
+SYSTEM_ROLE_TEMPLATES = [
+    {
+        "codigo": "admin",
+        "nombre": "Administrador",
+        "descripcion": "Acceso completo a toda la plataforma.",
+        "activo": True,
+        "es_sistema": True,
+        "permisos": "FULL",
+    },
+    {
+        "codigo": "tecnico",
+        "nombre": "Tecnico",
+        "descripcion": "Ejecuta servicios, consulta referencias y registra trabajo de campo.",
+        "activo": True,
+        "es_sistema": True,
+        "permisos": {
+            "dashboard": {"access": True, "view": True},
+            "servicios": {"access": True, "view": True, "edit": True, "export": True},
+            "horarios": {"access": True, "view": True, "create": True, "edit": True},
+            "vehiculos": {"access": True, "view": True},
+            "referencias": {"access": True, "view": True},
+        },
+    },
+    {
+        "codigo": "empleado",
+        "nombre": "Empleado",
+        "descripcion": "Consulta operativa y registro de jornada.",
+        "activo": True,
+        "es_sistema": True,
+        "permisos": {
+            "dashboard": {"access": True, "view": True},
+            "horarios": {"access": True, "view": True, "create": True},
+            "vehiculos": {"access": True, "view": True},
+        },
+    },
+    {
+        "codigo": "coordinador",
+        "nombre": "Coordinador",
+        "descripcion": "Gestiona operacion, catalogos y reportes sin administrar perfiles.",
+        "activo": True,
+        "es_sistema": True,
+        "permisos": {
+            "dashboard": {"access": True, "view": True},
+            "personal": {"access": True, "view": True, "create": True, "edit": True},
+            "servicios": {"access": True, "view": True, "create": True, "edit": True, "export": True},
+            "horarios": {"access": True, "view": True, "create": True, "edit": True, "approve": True},
+            "vehiculos": {"access": True, "view": True, "create": True, "edit": True},
+            "referencias": {"access": True, "view": True, "create": True, "edit": True},
+            "reportes": {"access": True, "view": True, "export": True},
+            "configuracion": {"access": True, "view": True, "create": True, "edit": True},
+            "nomina": {"access": True, "view": True, "create": True, "edit": True, "export": True},
+        },
+    },
+]
+
+PERMISSION_RULES = [
+    ({"GET"}, r"^/personal$", "personal", "view"),
+    ({"POST"}, r"^/personal$", "personal", "create"),
+    ({"PUT", "PATCH"}, r"^/personal/\d+", "personal", "edit"),
+    ({"GET"}, r"^/roles$", "roles", "view"),
+    ({"POST"}, r"^/roles$", "roles", "create"),
+    ({"PUT", "PATCH"}, r"^/roles/\d+", "roles", "edit"),
+    ({"GET"}, r"^/vehiculos$", "vehiculos", "view"),
+    ({"POST", "PUT", "PATCH"}, r"^/vehiculos(?:/.*)?$", "vehiculos", "edit"),
+    ({"GET"}, r"^/rutas$", "horarios", "view"),
+    ({"POST"}, r"^/rutas$", "horarios", "create"),
+    ({"GET"}, r"^/asistencia(?:/detalle)?$", "horarios", "view"),
+    ({"POST"}, r"^/marcaciones$", "horarios", "create"),
+    ({"GET"}, r"^/monitor/rutas$", "horarios", "view"),
+    ({"POST"}, r"^/gps/ping$", "horarios", "create"),
+    ({"GET"}, r"^/gps/(?:activos|historico|recorrido/.+)$", "horarios", "view"),
+    ({"GET"}, r"^/novedades-tipo$", "horarios", "view"),
+    ({"POST"}, r"^/novedades-tipo$", "horarios", "edit"),
+    ({"GET"}, r"^/stats$", "dashboard", "view"),
+    ({"GET"}, r"^/referencias$", "referencias", "view"),
+    ({"POST", "PUT"}, r"^/referencias(?:/.*)?$", "referencias", "edit"),
+    ({"GET"}, r"^/ordenes$", "servicios", "view"),
+    ({"POST"}, r"^/ordenes$", "servicios", "create"),
+    ({"PATCH", "POST"}, r"^/ordenes/\d+/(?:iniciar|cerrar|inspeccion|cerrar-no-ejecutada)$", "servicios", "edit"),
+    ({"GET"}, r"^/ordenes/\d+/(?:detalle|fotos|reporte-completo)$", "servicios", "view"),
+    ({"POST"}, r"^/ordenes/\d+/fotos$", "servicios", "edit"),
+    ({"GET"}, r"^/ordenes/\d+/reporte-pdf$", "servicios", "export"),
+    ({"POST"}, r"^/novedades_servicio$", "servicios", "edit"),
+    ({"GET"}, r"^/reportes/horas-extra$", "reportes", "view"),
+    ({"GET"}, r"^/config/(?:horarios-contrato|conceptos-nomina|parametros-tiempo|festivos-colombia)(?:/.*)?$", "configuracion", "view"),
+    ({"POST", "PUT", "PATCH"}, r"^/config/(?:horarios-contrato|conceptos-nomina|parametros-tiempo|festivos-colombia)(?:/.*)?$", "configuracion", "edit"),
+    ({"GET"}, r"^/nomina/(?:dashboard|quincenas|jornadas)(?:/.*)?$", "nomina", "view"),
+    ({"POST"}, r"^/nomina/(?:procesar-diario|procesar-rango|liquidar-quincena)(?:/.*)?$", "nomina", "create"),
+]
+
+
+def empty_permissions():
+    result = {}
+    for module_key, actions in PERMISSION_CATALOG.items():
+        result[module_key] = {action: False for action in actions}
+    return result
+
+
+def full_permissions():
+    result = empty_permissions()
+    for module_key in result:
+        for action in result[module_key]:
+            result[module_key][action] = True
+    return result
+
+
+def normalize_permissions(raw_permissions):
+    base = empty_permissions()
+    if raw_permissions == "FULL":
+        return full_permissions()
+    if not isinstance(raw_permissions, dict):
+        return base
+    for module_key, actions in base.items():
+        module_value = raw_permissions.get(module_key)
+        if not isinstance(module_value, dict):
+            continue
+        for action in actions:
+            base[module_key][action] = bool(module_value.get(action))
+    return base
+
+
+def permissions_to_json(raw_permissions):
+    return json.dumps(normalize_permissions(raw_permissions), ensure_ascii=True)
+
+
+def parse_permissions(raw_value):
+    if not raw_value:
+        return empty_permissions()
+    if isinstance(raw_value, dict):
+        return normalize_permissions(raw_value)
+    try:
+        return normalize_permissions(json.loads(raw_value))
+    except Exception:
+        return empty_permissions()
+
+
+def parse_int_list(raw_value: Optional[str]) -> List[int]:
+    if not raw_value:
+        return []
+    values = []
+    for item in str(raw_value).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            values.append(int(item))
+        except Exception:
+            continue
+    return values
+
+
+def role_code_from_name(name: str):
+    sanitized = re.sub(r"[^a-z0-9]+", "_", (name or "").strip().lower()).strip("_")
+    return sanitized or "rol"
+
+
+def ensure_usuario_columns(cur, conn):
+    statements = [
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salario_base NUMERIC DEFAULT 0",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS id_interno TEXT DEFAULT ''",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa TEXT DEFAULT ''",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS documento TEXT DEFAULT ''",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tasa_extra NUMERIC DEFAULT 0",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS username TEXT",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS horario_id INTEGER",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_laboral TEXT DEFAULT 'activo'",
+    ]
+    for statement in statements:
+        cur.execute(statement)
+    conn.commit()
+
+
+def ensure_vehiculo_columns(cur, conn):
+    statements = [
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS marca TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS anio INTEGER",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS color TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS cilindraje TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS capacidad_carga TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS combustible TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS kilometraje INTEGER DEFAULT 0",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_serie TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_motor TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS soat_vence TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tecnomecanica_vence TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS seguro_vence TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario TEXT DEFAULT ''",
+        "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS observaciones TEXT DEFAULT ''",
+    ]
+    for statement in statements:
+        cur.execute(statement)
+    conn.commit()
+
+
+def ensure_roles_schema(cur, conn):
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS roles (
+            id SERIAL PRIMARY KEY,
+            codigo TEXT UNIQUE NOT NULL,
+            nombre TEXT UNIQUE NOT NULL,
+            descripcion TEXT DEFAULT '',
+            permisos_json TEXT NOT NULL,
+            activo BOOLEAN DEFAULT TRUE,
+            es_sistema BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role_id INTEGER")
+    conn.commit()
+
+    for role_template in SYSTEM_ROLE_TEMPLATES:
+        cur.execute("""
+            INSERT INTO roles (codigo, nombre, descripcion, permisos_json, activo, es_sistema)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (codigo) DO UPDATE SET
+                nombre = EXCLUDED.nombre,
+                descripcion = EXCLUDED.descripcion,
+                permisos_json = EXCLUDED.permisos_json,
+                activo = EXCLUDED.activo,
+                es_sistema = EXCLUDED.es_sistema
+        """, (
+            role_template["codigo"],
+            role_template["nombre"],
+            role_template["descripcion"],
+            permissions_to_json(role_template["permisos"]),
+            role_template["activo"],
+            role_template["es_sistema"],
+        ))
+    conn.commit()
+
+    cur.execute("""
+        UPDATE usuarios u
+        SET role_id = r.id
+        FROM roles r
+        WHERE u.role_id IS NULL
+          AND LOWER(COALESCE(u.rol, '')) = r.codigo
+    """)
+    conn.commit()
+
+
+def fetch_role_by_id(cur, role_id: int):
+    cur.execute("""
+        SELECT id, codigo, nombre, descripcion, permisos_json, activo, es_sistema
+        FROM roles
+        WHERE id = %s
+    """, (role_id,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "codigo": row[1],
+        "nombre": row[2],
+        "descripcion": row[3] or "",
+        "permissions": parse_permissions(row[4]),
+        "activo": bool(row[5]),
+        "es_sistema": bool(row[6]),
+    }
+
+
+def get_fallback_permissions(role_code: str):
+    normalized = (role_code or "").strip().lower()
+    for role_template in SYSTEM_ROLE_TEMPLATES:
+        if role_template["codigo"] == normalized:
+            return normalize_permissions(role_template["permisos"])
+    return empty_permissions()
+
+
+def get_user_context(user_id):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        cur.execute("""
+            SELECT u.id,
+                   COALESCE(u.nombre, u.username),
+                   COALESCE(u.rol, ''),
+                   COALESCE(u.username, ''),
+                   COALESCE(u.activo, TRUE),
+                   u.role_id,
+                   r.codigo,
+                   r.nombre,
+                   r.descripcion,
+                   r.permisos_json,
+                   r.activo
+            FROM usuarios u
+            LEFT JOIN roles r ON r.id = u.role_id
+            WHERE u.id = %s
+        """, (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        permissions = parse_permissions(row[9]) if row[9] else get_fallback_permissions(row[2])
+        return {
+            "id": row[0],
+            "nombre": row[1],
+            "rol": row[6] or row[2] or "",
+            "username": row[3],
+            "activo": bool(row[4]),
+            "role_id": row[5],
+            "role_nombre": row[7] or row[2] or "",
+            "role_descripcion": row[8] or "",
+            "role_activo": bool(row[10]) if row[10] is not None else True,
+            "permissions": permissions,
+        }
+    finally:
+        release_conn(conn)
+
+
+def find_permission_rule(method: str, path: str):
+    for methods, pattern, module_key, action in PERMISSION_RULES:
+        if method in methods and re.match(pattern, path):
+            return module_key, action
+    return None
+
+
+@app.middleware("http")
+async def authorization_middleware(request: Request, call_next):
+    path = request.url.path
+    method = request.method.upper()
+
+    if method == "OPTIONS" or path in {"/", "/health", "/login"}:
+        return await call_next(request)
+
+    matched_rule = find_permission_rule(method, path)
+    if not matched_rule:
+        return await call_next(request)
+
+    raw_user_id = request.headers.get("X-User-Id", "").strip()
+    if not raw_user_id:
+        return JSONResponse(status_code=401, content={"detail": "Sesion no autenticada"})
+
+    try:
+        user_id = int(raw_user_id)
+    except ValueError:
+        return JSONResponse(status_code=401, content={"detail": "Usuario activo invalido"})
+
+    user_ctx = get_user_context(user_id)
+    if not user_ctx or not user_ctx.get("activo"):
+        return JSONResponse(status_code=403, content={"detail": "Usuario inactivo o inexistente"})
+
+    module_key, action = matched_rule
+    if not user_ctx.get("permissions", {}).get(module_key, {}).get(action, False):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"Sin permiso para {action} en {module_key}"}
+        )
+
+    request.state.current_user = user_ctx
+    return await call_next(request)
+
+
+DEFAULT_PARAMETROS_NOMINA = {
+    "horario_nocturno_inicio": "21:00",
+    "horario_nocturno_fin": "06:00",
+    "tiempo_almuerzo_minutos": "60",
+    "horas_ordinarias_dia": "8",
+    "horas_ordinarias_semana": "48",
+    "auxilio_transporte_mensual": "0",
+    "tope_auxilio_transporte_mensual": "999999999",
+}
+
+
+DEFAULT_CONCEPTOS_NOMINA = [
+    ("RN", "Recargo Nocturno", "recargo_ordinario", 35.0),
+    ("RDF", "Recargo Dominical/Festivo", "recargo_ordinario", 75.0),
+    ("RNDF", "Recargo Nocturno Dom/Fest", "recargo_ordinario", 110.0),
+    ("HED", "Hora Extra Diurna", "hora_extra", 25.0),
+    ("HEN", "Hora Extra Nocturna", "hora_extra", 75.0),
+    ("HEDDF", "Hora Extra Diurna Dom/Fest", "hora_extra", 100.0),
+    ("HENDF", "Hora Extra Nocturna Dom/Fest", "hora_extra", 150.0),
+]
+
+
+def parse_boolish(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "si", "yes"}
+
+
+def parse_date_safe(value: str):
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def parse_time_minutes(value: str):
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        if "AM" in raw.upper() or "PM" in raw.upper():
+            parsed = datetime.strptime(raw.upper(), "%I:%M %p")
+            return parsed.hour * 60 + parsed.minute
+        parsed = datetime.strptime(raw[:5], "%H:%M")
+        return parsed.hour * 60 + parsed.minute
+    except Exception:
+        return None
+
+
+def combine_date_and_time(day_value, time_value: str):
+    minutes = parse_time_minutes(time_value)
+    if minutes is None:
+        return None
+    base_day = day_value if hasattr(day_value, "year") else parse_date_safe(str(day_value))
+    return datetime.combine(base_day, time(hour=minutes // 60, minute=minutes % 60))
+
+
+def daterange(date_start, date_end):
+    cursor = date_start
+    while cursor <= date_end:
+        yield cursor
+        cursor += timedelta(days=1)
+
+
+def ensure_nomina_schema(cur, conn):
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS horarios_contrato (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            hora_entrada TEXT NOT NULL,
+            hora_salida TEXT NOT NULL,
+            hora_inicio_almuerzo TEXT DEFAULT '',
+            hora_fin_almuerzo TEXT DEFAULT '',
+            dias_laborables_json TEXT DEFAULT '[0,1,2,3,4]',
+            activo BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS horario_id INTEGER")
+    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_laboral TEXT DEFAULT 'activo'")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS conceptos_nomina (
+            id SERIAL PRIMARY KEY,
+            codigo TEXT UNIQUE NOT NULL,
+            nombre TEXT NOT NULL,
+            tipo TEXT NOT NULL,
+            porcentaje NUMERIC DEFAULT 0,
+            activo BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS parametros_tiempo (
+            clave TEXT PRIMARY KEY,
+            valor TEXT NOT NULL,
+            descripcion TEXT DEFAULT ''
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS festivos_colombia (
+            fecha DATE PRIMARY KEY,
+            nombre TEXT NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jornadas_procesadas (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            fecha DATE NOT NULL,
+            horario_id INTEGER,
+            ruta_id INTEGER,
+            vehiculo_placa TEXT DEFAULT '',
+            entrada_real TIMESTAMPTZ,
+            salida_real TIMESTAMPTZ,
+            almuerzo_inicio_real TIMESTAMPTZ,
+            almuerzo_fin_real TIMESTAMPTZ,
+            minutos_totales INTEGER DEFAULT 0,
+            minutos_almuerzo INTEGER DEFAULT 0,
+            minutos_ordinarios_diurnos INTEGER DEFAULT 0,
+            minutos_ordinarios_nocturnos INTEGER DEFAULT 0,
+            minutos_ordinarios_dom_fest_diurnos INTEGER DEFAULT 0,
+            minutos_ordinarios_dom_fest_nocturnos INTEGER DEFAULT 0,
+            minutos_extra_diurnos INTEGER DEFAULT 0,
+            minutos_extra_nocturnos INTEGER DEFAULT 0,
+            minutos_extra_dom_fest_diurnos INTEGER DEFAULT 0,
+            minutos_extra_dom_fest_nocturnos INTEGER DEFAULT 0,
+            alertas_json TEXT DEFAULT '[]',
+            inconsistente BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (usuario_id, fecha)
+        )
+    """)
+    cur.execute("ALTER TABLE jornadas_procesadas ADD COLUMN IF NOT EXISTS ruta_id INTEGER")
+    cur.execute("ALTER TABLE jornadas_procesadas ADD COLUMN IF NOT EXISTS vehiculo_placa TEXT DEFAULT ''")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS nomina_quincenal (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            fecha_inicio DATE NOT NULL,
+            fecha_fin DATE NOT NULL,
+            dias_trabajados INTEGER DEFAULT 0,
+            salario_basico NUMERIC DEFAULT 0,
+            salario_proporcional NUMERIC DEFAULT 0,
+            auxilio_transporte NUMERIC DEFAULT 0,
+            valor_RN NUMERIC DEFAULT 0,
+            valor_RDF NUMERIC DEFAULT 0,
+            valor_RNDF NUMERIC DEFAULT 0,
+            valor_HED NUMERIC DEFAULT 0,
+            valor_HEN NUMERIC DEFAULT 0,
+            valor_HEDDF NUMERIC DEFAULT 0,
+            valor_HENDF NUMERIC DEFAULT 0,
+            total_devengado NUMERIC DEFAULT 0,
+            deducciones NUMERIC DEFAULT 0,
+            neto_pagar NUMERIC DEFAULT 0,
+            alertas_json TEXT DEFAULT '[]',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (usuario_id, fecha_inicio, fecha_fin)
+        )
+    """)
+    conn.commit()
+
+    cur.execute("SELECT COUNT(*) FROM horarios_contrato")
+    if cur.fetchone()[0] == 0:
+        cur.execute("""
+            INSERT INTO horarios_contrato (
+                nombre, hora_entrada, hora_salida, hora_inicio_almuerzo, hora_fin_almuerzo, dias_laborables_json, activo
+            ) VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+        """, ("Jornada Administrativa", "08:00", "17:00", "12:00", "13:00", json.dumps([0, 1, 2, 3, 4])))
+
+    for codigo, nombre, tipo, porcentaje in DEFAULT_CONCEPTOS_NOMINA:
+        cur.execute("""
+            INSERT INTO conceptos_nomina (codigo, nombre, tipo, porcentaje, activo)
+            VALUES (%s, %s, %s, %s, TRUE)
+            ON CONFLICT (codigo) DO UPDATE SET
+                nombre = EXCLUDED.nombre,
+                tipo = EXCLUDED.tipo,
+                porcentaje = EXCLUDED.porcentaje,
+                activo = TRUE
+        """, (codigo, nombre, tipo, porcentaje))
+
+    for clave, valor in DEFAULT_PARAMETROS_NOMINA.items():
+        cur.execute("""
+            INSERT INTO parametros_tiempo (clave, valor, descripcion)
+            VALUES (%s, %s, '')
+            ON CONFLICT (clave) DO NOTHING
+        """, (clave, valor))
+    conn.commit()
+
+
+def get_parametros_nomina(cur):
+    ensure_nomina_schema(cur, cur.connection)
+    cur.execute("SELECT clave, valor FROM parametros_tiempo")
+    params = {row[0]: row[1] for row in cur.fetchall()}
+    for key, value in DEFAULT_PARAMETROS_NOMINA.items():
+        params.setdefault(key, value)
+    return params
+
+
+def get_conceptos_nomina(cur):
+    ensure_nomina_schema(cur, cur.connection)
+    cur.execute("SELECT codigo, porcentaje FROM conceptos_nomina WHERE activo = TRUE")
+    return {row[0]: float(row[1] or 0) for row in cur.fetchall()}
+
+
+def get_festivos_set(cur):
+    ensure_nomina_schema(cur, cur.connection)
+    cur.execute("SELECT fecha FROM festivos_colombia")
+    return {row[0] for row in cur.fetchall()}
+
+
+def is_domingo_o_festivo(day_value, festivos_set):
+    return day_value.weekday() == 6 or day_value in festivos_set
+
+
+def get_horario_ordinario_minutos(horario, params):
+    if horario:
+        entrada = parse_time_minutes(horario.get("hora_entrada"))
+        salida = parse_time_minutes(horario.get("hora_salida"))
+        if entrada is not None and salida is not None:
+            total = salida - entrada
+            if total <= 0:
+                total += 24 * 60
+            almuerzo_inicio = parse_time_minutes(horario.get("hora_inicio_almuerzo"))
+            almuerzo_fin = parse_time_minutes(horario.get("hora_fin_almuerzo"))
+            if almuerzo_inicio is not None and almuerzo_fin is not None:
+                almuerzo = almuerzo_fin - almuerzo_inicio
+                if almuerzo > 0:
+                    total -= almuerzo
+            return max(total, 0)
+    return int(float(params.get("horas_ordinarias_dia", "8")) * 60)
+
+
+def normalize_marcacion_tipo(tipo):
+    value = (tipo or "").strip().upper()
+    mapping = {
+        "ENTRADA": "entrada",
+        "INGRESO": "entrada",
+        "SALIDA": "salida",
+        "CIERRE": "salida",
+        "ALMUERZO": "inicio_almuerzo",
+        "INICIO_ALMUERZO": "inicio_almuerzo",
+        "FIN_ALMUERZO": "fin_almuerzo",
+        "RETORNO": "fin_almuerzo",
+        "REGRESO": "fin_almuerzo",
+    }
+    return mapping.get(value, value.lower())
+
+
+def split_paid_intervals(entrada_dt, salida_dt, almuerzo_inicio_dt, almuerzo_fin_dt, horario, params, alerts):
+    if salida_dt <= entrada_dt:
+        salida_dt += timedelta(days=1)
+
+    if almuerzo_inicio_dt and almuerzo_inicio_dt < entrada_dt:
+        almuerzo_inicio_dt += timedelta(days=1)
+    if almuerzo_fin_dt and almuerzo_fin_dt < entrada_dt:
+        almuerzo_fin_dt += timedelta(days=1)
+    if almuerzo_inicio_dt and almuerzo_fin_dt and almuerzo_fin_dt <= almuerzo_inicio_dt:
+        almuerzo_fin_dt += timedelta(days=1)
+
+    if not almuerzo_inicio_dt or not almuerzo_fin_dt:
+        default_break = int(params.get("tiempo_almuerzo_minutos", "60"))
+        horario_inicio = horario.get("hora_inicio_almuerzo") if horario else ""
+        horario_fin = horario.get("hora_fin_almuerzo") if horario else ""
+        schedule_lunch_start = combine_date_and_time(entrada_dt.date(), horario_inicio) if horario_inicio else None
+        schedule_lunch_end = combine_date_and_time(entrada_dt.date(), horario_fin) if horario_fin else None
+        if schedule_lunch_start and schedule_lunch_end:
+            if schedule_lunch_end <= schedule_lunch_start:
+                schedule_lunch_end += timedelta(days=1)
+            almuerzo_inicio_dt = schedule_lunch_start
+            almuerzo_fin_dt = schedule_lunch_end
+        else:
+            midpoint = entrada_dt + (salida_dt - entrada_dt) / 2
+            almuerzo_inicio_dt = midpoint - timedelta(minutes=default_break / 2)
+            almuerzo_fin_dt = almuerzo_inicio_dt + timedelta(minutes=default_break)
+        alerts.append("almuerzo_imputado")
+
+    intervals = []
+    if almuerzo_inicio_dt > entrada_dt:
+        intervals.append((entrada_dt, min(almuerzo_inicio_dt, salida_dt)))
+    if almuerzo_fin_dt < salida_dt:
+        intervals.append((max(almuerzo_fin_dt, entrada_dt), salida_dt))
+    intervals = [(start, end) for start, end in intervals if end > start]
+    return intervals, almuerzo_inicio_dt, almuerzo_fin_dt
+
+
+def split_by_ordinary_limit(intervals, ordinary_limit_minutes):
+    result = []
+    worked = 0
+    for start, end in intervals:
+        duration = int((end - start).total_seconds() // 60)
+        if duration <= 0:
+            continue
+        if worked >= ordinary_limit_minutes:
+            result.append((start, end, "extra"))
+            worked += duration
+            continue
+        remaining_ordinary = ordinary_limit_minutes - worked
+        if duration <= remaining_ordinary:
+            result.append((start, end, "ordinario"))
+            worked += duration
+        else:
+            cutoff = start + timedelta(minutes=remaining_ordinary)
+            result.append((start, cutoff, "ordinario"))
+            result.append((cutoff, end, "extra"))
+            worked += duration
+    return result
+
+
+def segment_boundaries(start, end, params):
+    boundaries = {start, end}
+    night_start = parse_time_minutes(params.get("horario_nocturno_inicio", "21:00")) or (21 * 60)
+    night_end = parse_time_minutes(params.get("horario_nocturno_fin", "06:00")) or (6 * 60)
+    for day in daterange(start.date(), end.date()):
+        boundaries.add(datetime.combine(day, time.min))
+        boundaries.add(datetime.combine(day, time(hour=night_start // 60, minute=night_start % 60)))
+        boundaries.add(datetime.combine(day, time(hour=night_end // 60, minute=night_end % 60)))
+        boundaries.add(datetime.combine(day + timedelta(days=1), time.min))
+    ordered = sorted(point for point in boundaries if start <= point <= end)
+    return ordered
+
+
+def classify_segment(day_value, dt_start, minutes, nature, festivos_set, params):
+    night_start = parse_time_minutes(params.get("horario_nocturno_inicio", "21:00")) or (21 * 60)
+    night_end = parse_time_minutes(params.get("horario_nocturno_fin", "06:00")) or (6 * 60)
+    minute_of_day = dt_start.hour * 60 + dt_start.minute
+    is_night = minute_of_day >= night_start or minute_of_day < night_end
+    is_special = is_domingo_o_festivo(day_value, festivos_set)
+
+    if nature == "ordinario" and not is_special and not is_night:
+        return "minutos_ordinarios_diurnos", minutes
+    if nature == "ordinario" and not is_special and is_night:
+        return "minutos_ordinarios_nocturnos", minutes
+    if nature == "ordinario" and is_special and not is_night:
+        return "minutos_ordinarios_dom_fest_diurnos", minutes
+    if nature == "ordinario" and is_special and is_night:
+        return "minutos_ordinarios_dom_fest_nocturnos", minutes
+    if nature == "extra" and not is_special and not is_night:
+        return "minutos_extra_diurnos", minutes
+    if nature == "extra" and not is_special and is_night:
+        return "minutos_extra_nocturnos", minutes
+    if nature == "extra" and is_special and not is_night:
+        return "minutos_extra_dom_fest_diurnos", minutes
+    return "minutos_extra_dom_fest_nocturnos", minutes
+
+
+def process_single_day(cur, user_row, target_date, params, festivos_set, horarios_map):
+    status = (user_row["estado_laboral"] or "activo").strip().lower()
+    if status in {"suspendido", "vacaciones", "licencia remunerada", "licencia no remunerada", "incapacidad"}:
+        return None
+
+    aliases = []
+    for candidate in [user_row.get("nombre"), user_row.get("username")]:
+        value = (candidate or "").strip()
+        if value and value not in aliases:
+            aliases.append(value)
+    if not aliases:
+        return None
+
+    cur.execute("""
+        SELECT tipo_marca, hora, fecha, COALESCE(vehiculo_placa, ''), ruta_id
+        FROM asistencia
+        WHERE usuario = ANY(%s)
+          AND fecha BETWEEN %s AND %s
+        ORDER BY fecha, hora, id
+    """, (aliases, target_date, target_date + timedelta(days=1)))
+    marks = []
+    for tipo, hora_value, fecha_value, vehiculo_placa, ruta_id in cur.fetchall():
+        normalized = normalize_marcacion_tipo(tipo)
+        marks.append({
+            "tipo": normalized,
+            "dt": combine_date_and_time(fecha_value, hora_value),
+            "vehiculo_placa": vehiculo_placa or "",
+            "ruta_id": ruta_id,
+        })
+
+    entrada = next((mark["dt"] for mark in marks if mark["tipo"] == "entrada" and mark["dt"] and mark["dt"].date() == target_date), None)
+    if not entrada:
+        return None
+
+    salida = next((mark["dt"] for mark in marks if mark["tipo"] == "salida" and mark["dt"] and mark["dt"] > entrada), None)
+    if not salida:
+        return {
+            "usuario_id": user_row["id"],
+            "fecha": target_date,
+            "alertas": ["sin_salida"],
+            "inconsistente": True,
+        }
+
+    almuerzo_inicio = next((mark["dt"] for mark in marks if mark["tipo"] == "inicio_almuerzo" and mark["dt"] and entrada < mark["dt"] < salida), None)
+    almuerzo_fin = next((mark["dt"] for mark in marks if mark["tipo"] == "fin_almuerzo" and mark["dt"] and almuerzo_inicio and mark["dt"] > almuerzo_inicio), None)
+
+    alerts = []
+    horario = horarios_map.get(user_row.get("horario_id"))
+    intervals, almuerzo_inicio_real, almuerzo_fin_real = split_paid_intervals(
+        entrada, salida, almuerzo_inicio, almuerzo_fin, horario, params, alerts
+    )
+    ordinary_limit = get_horario_ordinario_minutos(horario, params)
+    classified_intervals = split_by_ordinary_limit(intervals, ordinary_limit)
+
+    result = {
+        "usuario_id": user_row["id"],
+        "fecha": target_date,
+        "horario_id": user_row.get("horario_id"),
+        "ruta_id": next((mark.get("ruta_id") for mark in marks if mark.get("ruta_id")), None),
+        "vehiculo_placa": next((mark.get("vehiculo_placa") for mark in marks if mark.get("vehiculo_placa")), ""),
+        "entrada_real": entrada,
+        "salida_real": salida,
+        "almuerzo_inicio_real": almuerzo_inicio_real,
+        "almuerzo_fin_real": almuerzo_fin_real,
+        "minutos_totales": max(int((salida - entrada).total_seconds() // 60), 0),
+        "minutos_almuerzo": max(int((almuerzo_fin_real - almuerzo_inicio_real).total_seconds() // 60), 0) if almuerzo_inicio_real and almuerzo_fin_real else 0,
+        "minutos_ordinarios_diurnos": 0,
+        "minutos_ordinarios_nocturnos": 0,
+        "minutos_ordinarios_dom_fest_diurnos": 0,
+        "minutos_ordinarios_dom_fest_nocturnos": 0,
+        "minutos_extra_diurnos": 0,
+        "minutos_extra_nocturnos": 0,
+        "minutos_extra_dom_fest_diurnos": 0,
+        "minutos_extra_dom_fest_nocturnos": 0,
+        "alertas": alerts,
+        "inconsistente": False,
+    }
+
+    for start, end, nature in classified_intervals:
+        boundaries = segment_boundaries(start, end, params)
+        for idx in range(len(boundaries) - 1):
+            seg_start = boundaries[idx]
+            seg_end = boundaries[idx + 1]
+            if seg_end <= seg_start:
+                continue
+            minutes = int((seg_end - seg_start).total_seconds() // 60)
+            bucket, amount = classify_segment(seg_start.date(), seg_start, minutes, nature, festivos_set, params)
+            result[bucket] += amount
+
+    return result
+
+
+def upsert_jornada_procesada(cur, jornada):
+    cur.execute("""
+        INSERT INTO jornadas_procesadas (
+            usuario_id, fecha, horario_id, ruta_id, vehiculo_placa, entrada_real, salida_real,
+            almuerzo_inicio_real, almuerzo_fin_real, minutos_totales, minutos_almuerzo,
+            minutos_ordinarios_diurnos, minutos_ordinarios_nocturnos,
+            minutos_ordinarios_dom_fest_diurnos, minutos_ordinarios_dom_fest_nocturnos,
+            minutos_extra_diurnos, minutos_extra_nocturnos,
+            minutos_extra_dom_fest_diurnos, minutos_extra_dom_fest_nocturnos,
+            alertas_json, inconsistente
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (usuario_id, fecha) DO UPDATE SET
+            horario_id = EXCLUDED.horario_id,
+            ruta_id = EXCLUDED.ruta_id,
+            vehiculo_placa = EXCLUDED.vehiculo_placa,
+            entrada_real = EXCLUDED.entrada_real,
+            salida_real = EXCLUDED.salida_real,
+            almuerzo_inicio_real = EXCLUDED.almuerzo_inicio_real,
+            almuerzo_fin_real = EXCLUDED.almuerzo_fin_real,
+            minutos_totales = EXCLUDED.minutos_totales,
+            minutos_almuerzo = EXCLUDED.minutos_almuerzo,
+            minutos_ordinarios_diurnos = EXCLUDED.minutos_ordinarios_diurnos,
+            minutos_ordinarios_nocturnos = EXCLUDED.minutos_ordinarios_nocturnos,
+            minutos_ordinarios_dom_fest_diurnos = EXCLUDED.minutos_ordinarios_dom_fest_diurnos,
+            minutos_ordinarios_dom_fest_nocturnos = EXCLUDED.minutos_ordinarios_dom_fest_nocturnos,
+            minutos_extra_diurnos = EXCLUDED.minutos_extra_diurnos,
+            minutos_extra_nocturnos = EXCLUDED.minutos_extra_nocturnos,
+            minutos_extra_dom_fest_diurnos = EXCLUDED.minutos_extra_dom_fest_diurnos,
+            minutos_extra_dom_fest_nocturnos = EXCLUDED.minutos_extra_dom_fest_nocturnos,
+            alertas_json = EXCLUDED.alertas_json,
+            inconsistente = EXCLUDED.inconsistente
+    """, (
+        jornada["usuario_id"], jornada["fecha"], jornada.get("horario_id"), jornada.get("ruta_id"), jornada.get("vehiculo_placa", ""),
+        jornada.get("entrada_real"), jornada.get("salida_real"),
+        jornada.get("almuerzo_inicio_real"), jornada.get("almuerzo_fin_real"), jornada.get("minutos_totales", 0), jornada.get("minutos_almuerzo", 0),
+        jornada.get("minutos_ordinarios_diurnos", 0), jornada.get("minutos_ordinarios_nocturnos", 0),
+        jornada.get("minutos_ordinarios_dom_fest_diurnos", 0), jornada.get("minutos_ordinarios_dom_fest_nocturnos", 0),
+        jornada.get("minutos_extra_diurnos", 0), jornada.get("minutos_extra_nocturnos", 0),
+        jornada.get("minutos_extra_dom_fest_diurnos", 0), jornada.get("minutos_extra_dom_fest_nocturnos", 0),
+        json.dumps(jornada.get("alertas", [])), jornada.get("inconsistente", False)
+    ))
+
 # ============================================================
 # MODELOS PYDANTIC (validacion de datos)
 # ============================================================
@@ -102,13 +950,64 @@ class PersonalCreate(BaseModel):
     nombre: str
     doc: Optional[str] = ""
     user: str
-    pas: Optional[str] = "1234"
+    pas: Optional[str] = Field(default="1234", alias="pass")
     rol: str
+    role_id: Optional[int] = None
+    horario_id: Optional[int] = None
+    estado_laboral: Optional[str] = "activo"
     id_interno: str
     empresa: Optional[str] = "APEX"
     costo: Optional[float] = 0
     salario: Optional[float] = 0
     extra: Optional[float] = 0
+
+    class Config:
+        allow_population_by_field_name = True
+
+
+class RoleCreate(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = ""
+    permissions: dict = {}
+    activo: bool = True
+
+
+class HorarioContratoCreate(BaseModel):
+    nombre: str
+    hora_entrada: str
+    hora_salida: str
+    hora_inicio_almuerzo: Optional[str] = ""
+    hora_fin_almuerzo: Optional[str] = ""
+    dias_laborables: List[int] = [0, 1, 2, 3, 4]
+    activo: bool = True
+
+
+class ConceptoNominaCreate(BaseModel):
+    codigo: str
+    nombre: str
+    tipo: str
+    porcentaje: float
+    activo: bool = True
+
+
+class ParametroTiempoUpdate(BaseModel):
+    parametros: dict
+
+
+class FestivoCreate(BaseModel):
+    fecha: str
+    nombre: str
+
+
+class NominaProcesarRequest(BaseModel):
+    fecha: Optional[str] = None
+    fecha_inicio: Optional[str] = None
+    fecha_fin: Optional[str] = None
+
+
+class NominaLiquidarRequest(BaseModel):
+    fecha_inicio: str
+    fecha_fin: str
 
 
 class FotoUpload(BaseModel):
@@ -164,23 +1063,45 @@ def health():
 # ============================================================
 @app.post("/login")
 def login(req: LoginRequest):
+    conn = None
     try:
         conn = get_conn()
         cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
         cur.execute(
-            """SELECT id, COALESCE(nombre, username) as nombre, rol, username
-               FROM usuarios WHERE username = %s AND password = %s""",
+            """SELECT u.id,
+                      COALESCE(u.nombre, u.username) as nombre,
+                      COALESCE(r.codigo, u.rol, '') as rol_codigo,
+                      COALESCE(u.username, '') as username,
+                      u.role_id,
+                      COALESCE(r.nombre, u.rol, '') as role_nombre,
+                      COALESCE(r.descripcion, '') as role_descripcion,
+                      r.permisos_json,
+                      COALESCE(u.activo, TRUE) as usuario_activo,
+                      COALESCE(r.activo, TRUE) as rol_activo
+               FROM usuarios
+               u
+               LEFT JOIN roles r ON r.id = u.role_id
+               WHERE u.username = %s AND u.password = %s""",
             (req.username, req.password)
         )
         row = cur.fetchone()
-        release_conn(conn)
         if row:
+            if not row[8]:
+                raise HTTPException(status_code=403, detail="Usuario inactivo")
+            if not row[9]:
+                raise HTTPException(status_code=403, detail="El rol asignado esta inactivo")
+            permissions = parse_permissions(row[7]) if row[7] else get_fallback_permissions(row[2])
             return {
                 "usuario": {
-                    "id":       row[0],
-                    "nombre":   row[1],   # nunca null: cae a username si nombre es null
-                    "rol":      row[2],
-                    "username": row[3]
+                    "id": row[0],
+                    "nombre": row[1],
+                    "rol": row[2],
+                    "username": row[3],
+                    "role_id": row[4],
+                    "role_nombre": row[5],
+                    "role_descripcion": row[6],
+                    "permissions": permissions,
                 }
             }
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
@@ -188,6 +1109,136 @@ def login(req: LoginRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/roles")
+def get_roles(activo: Optional[bool] = None):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        query = """
+            SELECT id, codigo, nombre, descripcion, permisos_json, activo, es_sistema
+            FROM roles
+        """
+        params = []
+        if activo is not None:
+            query += " WHERE activo = %s"
+            params.append(activo)
+        query += " ORDER BY es_sistema DESC, nombre"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        return [
+            {
+                "id": row[0],
+                "codigo": row[1],
+                "nombre": row[2],
+                "descripcion": row[3] or "",
+                "permissions": parse_permissions(row[4]),
+                "activo": bool(row[5]),
+                "es_sistema": bool(row[6]),
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.post("/roles")
+def crear_rol(role: RoleCreate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        codigo = role_code_from_name(role.nombre)
+        cur.execute("SELECT 1 FROM roles WHERE codigo = %s", (codigo,))
+        if cur.fetchone():
+            raise HTTPException(status_code=400, detail="Ya existe un rol con ese nombre")
+        cur.execute("""
+            INSERT INTO roles (codigo, nombre, descripcion, permisos_json, activo, es_sistema)
+            VALUES (%s, %s, %s, %s, %s, FALSE)
+            RETURNING id
+        """, (
+            codigo,
+            role.nombre.strip(),
+            (role.descripcion or "").strip(),
+            permissions_to_json(role.permissions),
+            role.activo,
+        ))
+        role_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": role_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.put("/roles/{role_id}")
+def editar_rol(role_id: int, role: RoleCreate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        current = fetch_role_by_id(cur, role_id)
+        if not current:
+            raise HTTPException(status_code=404, detail="Rol no encontrado")
+        codigo = current["codigo"] if current["es_sistema"] else role_code_from_name(role.nombre)
+        cur.execute("""
+            SELECT 1 FROM roles
+            WHERE codigo = %s AND id <> %s
+        """, (codigo, role_id))
+        if cur.fetchone():
+            raise HTTPException(status_code=400, detail="Ya existe otro rol con ese nombre")
+        cur.execute("""
+            UPDATE roles
+            SET codigo = %s,
+                nombre = %s,
+                descripcion = %s,
+                permisos_json = %s,
+                activo = %s
+            WHERE id = %s
+        """, (
+            codigo,
+            role.nombre.strip(),
+            (role.descripcion or "").strip(),
+            permissions_to_json(role.permissions),
+            role.activo,
+            role_id,
+        ))
+        conn.commit()
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.patch("/roles/{role_id}/estado")
+def toggle_rol(role_id: int, activo: bool):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        cur.execute("UPDATE roles SET activo = %s WHERE id = %s", (activo, role_id))
+        conn.commit()
+        return {"ok": True, "activo": activo}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
 
 # ============================================================
 # PERSONAL
@@ -197,28 +1248,27 @@ def get_personal():
     try:
         conn = get_conn()
         cur = conn.cursor()
-        # Ensure columns exist first
-        for col_sql in [
-            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salario_base NUMERIC DEFAULT 0",
-            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS id_interno TEXT DEFAULT ''",
-            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa TEXT DEFAULT ''",
-            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS documento TEXT DEFAULT ''",
-            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tasa_extra NUMERIC DEFAULT 0",
-            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS username TEXT",
-            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
-        ]:
-            try: cur.execute(col_sql); conn.commit()
-            except: conn.rollback()
+        ensure_roles_schema(cur, conn)
+        ensure_nomina_schema(cur, conn)
         cur.execute("""
-            SELECT id, nombre, rol,
+            SELECT u.id, u.nombre, COALESCE(r.codigo, u.rol, ''),
                    COALESCE(salario_base, 0),
                    COALESCE(id_interno, ''),
                    COALESCE(empresa, ''),
                    COALESCE(documento, ''),
                    COALESCE(tasa_extra, 0),
                    COALESCE(username, ''),
-                   COALESCE(activo, TRUE)
-            FROM usuarios ORDER BY nombre
+                   COALESCE(u.activo, TRUE),
+                   u.role_id,
+                   COALESCE(r.nombre, ''),
+                   COALESCE(costo_servicio, 0),
+                   u.horario_id,
+                   COALESCE(h.nombre, ''),
+                   COALESCE(u.estado_laboral, 'activo')
+            FROM usuarios u
+            LEFT JOIN roles r ON r.id = u.role_id
+            LEFT JOIN horarios_contrato h ON h.id = u.horario_id
+            ORDER BY u.nombre
         """)
         rows = cur.fetchall()
         release_conn(conn)
@@ -228,7 +1278,11 @@ def get_personal():
                 "salario_base": float(r[3]) if r[3] else 0,
                 "id_interno": r[4], "empresa": r[5],
                 "documento": r[6], "tasa_extra": float(r[7]) if r[7] else 0,
-                "username": r[8], "activo": bool(r[9])
+                "username": r[8], "activo": bool(r[9]),
+                "role_id": r[10], "role_nombre": r[11],
+                "costo_servicio": float(r[12]) if r[12] else 0,
+                "horario_id": r[13], "horario_nombre": r[14],
+                "estado_laboral": r[15],
             }
             for r in rows
         ]
@@ -237,19 +1291,714 @@ def get_personal():
 
 @app.post("/personal")
 def crear_personal(p: PersonalCreate):
+    conn = None
     try:
         conn = get_conn()
         cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        ensure_nomina_schema(cur, conn)
+        role_id = p.role_id
+        role_code = p.rol
+        if role_id:
+            role_info = fetch_role_by_id(cur, role_id)
+            if not role_info:
+                raise HTTPException(status_code=404, detail="Rol no encontrado")
+            if not role_info["activo"]:
+                raise HTTPException(status_code=400, detail="El rol seleccionado esta inactivo")
+            role_code = role_info["codigo"]
+        else:
+            cur.execute("SELECT id, codigo, activo FROM roles WHERE codigo = %s", ((p.rol or "").strip().lower(),))
+            role_row = cur.fetchone()
+            if role_row:
+                role_id = role_row[0]
+                role_code = role_row[1]
+                if not role_row[2]:
+                    raise HTTPException(status_code=400, detail="El rol seleccionado esta inactivo")
         cur.execute("""
             INSERT INTO usuarios
-            (nombre, username, password, rol, documento, empresa, id_interno, costo_servicio, salario_base, tasa_extra)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (p.nombre, p.user, p.pas, p.rol, p.doc, p.empresa, p.id_interno, p.costo, p.salario, p.extra))
+            (nombre, username, password, rol, role_id, horario_id, estado_laboral, documento, empresa, id_interno, costo_servicio, salario_base, tasa_extra)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (p.nombre, p.user, p.pas, role_code, role_id, p.horario_id, p.estado_laboral or "activo", p.doc, p.empresa, p.id_interno, p.costo, p.salario, p.extra))
         conn.commit()
-        release_conn(conn)
         return {"ok": True, "id_interno": p.id_interno}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/config/horarios-contrato")
+def get_horarios_contrato(activo: Optional[bool] = None):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        query = """
+            SELECT id, nombre, hora_entrada, hora_salida, hora_inicio_almuerzo, hora_fin_almuerzo, dias_laborables_json, activo
+            FROM horarios_contrato
+        """
+        params = []
+        if activo is not None:
+            query += " WHERE activo = %s"
+            params.append(activo)
+        query += " ORDER BY nombre"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        return [{
+            "id": row[0],
+            "nombre": row[1],
+            "hora_entrada": row[2],
+            "hora_salida": row[3],
+            "hora_inicio_almuerzo": row[4] or "",
+            "hora_fin_almuerzo": row[5] or "",
+            "dias_laborables": json.loads(row[6] or "[]"),
+            "activo": bool(row[7]),
+        } for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.post("/config/horarios-contrato")
+def crear_horario_contrato(horario: HorarioContratoCreate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        cur.execute("""
+            INSERT INTO horarios_contrato (
+                nombre, hora_entrada, hora_salida, hora_inicio_almuerzo, hora_fin_almuerzo, dias_laborables_json, activo
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            horario.nombre, horario.hora_entrada, horario.hora_salida,
+            horario.hora_inicio_almuerzo or "", horario.hora_fin_almuerzo or "",
+            json.dumps(horario.dias_laborables or [0, 1, 2, 3, 4]), horario.activo
+        ))
+        hid = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": hid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.put("/config/horarios-contrato/{hid}")
+def editar_horario_contrato(hid: int, horario: HorarioContratoCreate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        cur.execute("""
+            UPDATE horarios_contrato
+            SET nombre = %s, hora_entrada = %s, hora_salida = %s,
+                hora_inicio_almuerzo = %s, hora_fin_almuerzo = %s,
+                dias_laborables_json = %s, activo = %s
+            WHERE id = %s
+        """, (
+            horario.nombre, horario.hora_entrada, horario.hora_salida,
+            horario.hora_inicio_almuerzo or "", horario.hora_fin_almuerzo or "",
+            json.dumps(horario.dias_laborables or [0, 1, 2, 3, 4]), horario.activo, hid
+        ))
+        conn.commit()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/config/conceptos-nomina")
+def get_conceptos_nomina_config():
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        cur.execute("""
+            SELECT id, codigo, nombre, tipo, porcentaje, activo
+            FROM conceptos_nomina
+            ORDER BY tipo, codigo
+        """)
+        return [{
+            "id": row[0],
+            "codigo": row[1],
+            "nombre": row[2],
+            "tipo": row[3],
+            "porcentaje": float(row[4] or 0),
+            "activo": bool(row[5]),
+        } for row in cur.fetchall()]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.post("/config/conceptos-nomina")
+def crear_concepto_nomina(concepto: ConceptoNominaCreate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        cur.execute("""
+            INSERT INTO conceptos_nomina (codigo, nombre, tipo, porcentaje, activo)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (concepto.codigo.upper(), concepto.nombre, concepto.tipo, concepto.porcentaje, concepto.activo))
+        cid = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": cid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.put("/config/conceptos-nomina/{cid}")
+def editar_concepto_nomina(cid: int, concepto: ConceptoNominaCreate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        cur.execute("""
+            UPDATE conceptos_nomina
+            SET codigo = %s, nombre = %s, tipo = %s, porcentaje = %s, activo = %s
+            WHERE id = %s
+        """, (concepto.codigo.upper(), concepto.nombre, concepto.tipo, concepto.porcentaje, concepto.activo, cid))
+        conn.commit()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/config/parametros-tiempo")
+def get_parametros_tiempo_config():
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        params = get_parametros_nomina(cur)
+        return params
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.post("/config/parametros-tiempo")
+def guardar_parametros_tiempo(payload: ParametroTiempoUpdate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        for key, value in (payload.parametros or {}).items():
+            cur.execute("""
+                INSERT INTO parametros_tiempo (clave, valor, descripcion)
+                VALUES (%s, %s, '')
+                ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor
+            """, (key, str(value)))
+        conn.commit()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/config/festivos-colombia")
+def get_festivos_colombia(anio: Optional[int] = None):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        if anio:
+            cur.execute("SELECT fecha, nombre FROM festivos_colombia WHERE EXTRACT(YEAR FROM fecha) = %s ORDER BY fecha", (anio,))
+        else:
+            cur.execute("SELECT fecha, nombre FROM festivos_colombia ORDER BY fecha DESC")
+        return [{"fecha": str(row[0]), "nombre": row[1]} for row in cur.fetchall()]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.post("/config/festivos-colombia")
+def crear_festivo_colombia(festivo: FestivoCreate):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        cur.execute("""
+            INSERT INTO festivos_colombia (fecha, nombre)
+            VALUES (%s, %s)
+            ON CONFLICT (fecha) DO UPDATE SET nombre = EXCLUDED.nombre
+        """, (festivo.fecha, festivo.nombre))
+        conn.commit()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+def fetch_users_for_nomina(cur):
+    ensure_nomina_schema(cur, cur.connection)
+    cur.execute("""
+        SELECT u.id, u.nombre, COALESCE(u.username, ''), COALESCE(u.salario_base, 0), COALESCE(u.horario_id, NULL), COALESCE(u.estado_laboral, 'activo')
+        FROM usuarios u
+        WHERE COALESCE(u.activo, TRUE) = TRUE
+    """)
+    return [{
+        "id": row[0],
+        "nombre": row[1],
+        "username": row[2] or "",
+        "salario_base": float(row[3] or 0),
+        "horario_id": row[4],
+        "estado_laboral": row[5] or "activo",
+    } for row in cur.fetchall()]
+
+
+def fetch_horarios_map(cur):
+    ensure_nomina_schema(cur, cur.connection)
+    cur.execute("""
+        SELECT id, nombre, hora_entrada, hora_salida, hora_inicio_almuerzo, hora_fin_almuerzo, dias_laborables_json, activo
+        FROM horarios_contrato
+    """)
+    rows = cur.fetchall()
+    return {
+        row[0]: {
+            "id": row[0],
+            "nombre": row[1],
+            "hora_entrada": row[2],
+            "hora_salida": row[3],
+            "hora_inicio_almuerzo": row[4] or "",
+            "hora_fin_almuerzo": row[5] or "",
+            "dias_laborables": json.loads(row[6] or "[]"),
+            "activo": bool(row[7]),
+        }
+        for row in rows
+    }
+
+
+def liquidar_usuario(cur, user_row, fecha_inicio, fecha_fin, params, conceptos):
+    cur.execute("""
+        SELECT
+            COALESCE(SUM(minutos_ordinarios_nocturnos), 0),
+            COALESCE(SUM(minutos_ordinarios_dom_fest_diurnos), 0),
+            COALESCE(SUM(minutos_ordinarios_dom_fest_nocturnos), 0),
+            COALESCE(SUM(minutos_extra_diurnos), 0),
+            COALESCE(SUM(minutos_extra_nocturnos), 0),
+            COALESCE(SUM(minutos_extra_dom_fest_diurnos), 0),
+            COALESCE(SUM(minutos_extra_dom_fest_nocturnos), 0),
+            COUNT(*),
+            COALESCE(json_agg(alertas_json) FILTER (WHERE alertas_json IS NOT NULL), '[]')
+        FROM jornadas_procesadas
+        WHERE usuario_id = %s
+          AND fecha BETWEEN %s AND %s
+    """, (user_row["id"], fecha_inicio, fecha_fin))
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    valor_hora = float(user_row["salario_base"] or 0) / 240 if user_row["salario_base"] else 0
+    dias_trabajados = int(row[7] or 0)
+    salario_proporcional = round((float(user_row["salario_base"] or 0) / 30) * dias_trabajados, 2)
+    auxilio_mensual = float(params.get("auxilio_transporte_mensual", "0") or 0)
+    tope_auxilio = float(params.get("tope_auxilio_transporte_mensual", "999999999") or 999999999)
+    auxilio_transporte = round((auxilio_mensual / 30) * dias_trabajados, 2) if user_row["salario_base"] <= tope_auxilio else 0
+
+    valores = {
+        "RN": round((row[0] / 60.0) * valor_hora * (conceptos.get("RN", 0) / 100.0), 2),
+        "RDF": round((row[1] / 60.0) * valor_hora * (conceptos.get("RDF", 0) / 100.0), 2),
+        "RNDF": round((row[2] / 60.0) * valor_hora * (conceptos.get("RNDF", 0) / 100.0), 2),
+        "HED": round((row[3] / 60.0) * valor_hora * (1 + conceptos.get("HED", 0) / 100.0), 2),
+        "HEN": round((row[4] / 60.0) * valor_hora * (1 + conceptos.get("HEN", 0) / 100.0), 2),
+        "HEDDF": round((row[5] / 60.0) * valor_hora * (1 + conceptos.get("HEDDF", 0) / 100.0), 2),
+        "HENDF": round((row[6] / 60.0) * valor_hora * (1 + conceptos.get("HENDF", 0) / 100.0), 2),
+    }
+    total_devengado = round(salario_proporcional + auxilio_transporte + sum(valores.values()), 2)
+    deducciones = 0.0
+    neto = round(total_devengado - deducciones, 2)
+    alertas = []
+    if dias_trabajados == 0:
+        alertas.append("sin_jornadas")
+
+    cur.execute("""
+        INSERT INTO nomina_quincenal (
+            usuario_id, fecha_inicio, fecha_fin, dias_trabajados, salario_basico, salario_proporcional,
+            auxilio_transporte, valor_RN, valor_RDF, valor_RNDF, valor_HED, valor_HEN, valor_HEDDF, valor_HENDF,
+            total_devengado, deducciones, neto_pagar, alertas_json
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (usuario_id, fecha_inicio, fecha_fin) DO UPDATE SET
+            dias_trabajados = EXCLUDED.dias_trabajados,
+            salario_basico = EXCLUDED.salario_basico,
+            salario_proporcional = EXCLUDED.salario_proporcional,
+            auxilio_transporte = EXCLUDED.auxilio_transporte,
+            valor_RN = EXCLUDED.valor_RN,
+            valor_RDF = EXCLUDED.valor_RDF,
+            valor_RNDF = EXCLUDED.valor_RNDF,
+            valor_HED = EXCLUDED.valor_HED,
+            valor_HEN = EXCLUDED.valor_HEN,
+            valor_HEDDF = EXCLUDED.valor_HEDDF,
+            valor_HENDF = EXCLUDED.valor_HENDF,
+            total_devengado = EXCLUDED.total_devengado,
+            deducciones = EXCLUDED.deducciones,
+            neto_pagar = EXCLUDED.neto_pagar,
+            alertas_json = EXCLUDED.alertas_json
+    """, (
+        user_row["id"], fecha_inicio, fecha_fin, dias_trabajados, user_row["salario_base"], salario_proporcional,
+        auxilio_transporte, valores["RN"], valores["RDF"], valores["RNDF"], valores["HED"], valores["HEN"], valores["HEDDF"], valores["HENDF"],
+        total_devengado, deducciones, neto, json.dumps(alertas)
+    ))
+    return {
+        "usuario_id": user_row["id"],
+        "empleado": user_row["nombre"],
+        "dias_trabajados": dias_trabajados,
+        "salario_proporcional": salario_proporcional,
+        "auxilio_transporte": auxilio_transporte,
+        "total_devengado": total_devengado,
+        "neto_pagar": neto,
+        **valores,
+    }
+
+
+@app.post("/nomina/procesar-diario")
+def procesar_nomina_diaria(payload: NominaProcesarRequest):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        fecha = parse_date_safe(payload.fecha or datetime.now().strftime("%Y-%m-%d"))
+        params = get_parametros_nomina(cur)
+        festivos_set = get_festivos_set(cur)
+        horarios_map = fetch_horarios_map(cur)
+        users = fetch_users_for_nomina(cur)
+
+        procesadas = []
+        for user_row in users:
+            jornada = process_single_day(cur, user_row, fecha, params, festivos_set, horarios_map)
+            if jornada:
+                upsert_jornada_procesada(cur, jornada)
+                procesadas.append(jornada)
+        conn.commit()
+        return {"ok": True, "fecha": str(fecha), "procesadas": len(procesadas)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.post("/nomina/procesar-rango")
+def procesar_nomina_rango(payload: NominaProcesarRequest):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        fecha_inicio = parse_date_safe(payload.fecha_inicio)
+        fecha_fin = parse_date_safe(payload.fecha_fin)
+        params = get_parametros_nomina(cur)
+        festivos_set = get_festivos_set(cur)
+        horarios_map = fetch_horarios_map(cur)
+        users = fetch_users_for_nomina(cur)
+        total = 0
+        for day in daterange(fecha_inicio, fecha_fin):
+            for user_row in users:
+                jornada = process_single_day(cur, user_row, day, params, festivos_set, horarios_map)
+                if jornada:
+                    upsert_jornada_procesada(cur, jornada)
+                    total += 1
+        conn.commit()
+        return {"ok": True, "fecha_inicio": str(fecha_inicio), "fecha_fin": str(fecha_fin), "procesadas": total}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.post("/nomina/liquidar-quincena")
+def liquidar_nomina_quincenal(payload: NominaLiquidarRequest):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        fecha_inicio = parse_date_safe(payload.fecha_inicio)
+        fecha_fin = parse_date_safe(payload.fecha_fin)
+        params = get_parametros_nomina(cur)
+        conceptos = get_conceptos_nomina(cur)
+        users = fetch_users_for_nomina(cur)
+        liquidaciones = []
+        for user_row in users:
+            liq = liquidar_usuario(cur, user_row, fecha_inicio, fecha_fin, params, conceptos)
+            if liq:
+                liquidaciones.append(liq)
+        conn.commit()
+        return {"ok": True, "fecha_inicio": str(fecha_inicio), "fecha_fin": str(fecha_fin), "liquidaciones": liquidaciones}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/nomina/quincenas")
+def get_nomina_quincenas(
+    fecha_inicio: Optional[str] = None,
+    fecha_fin: Optional[str] = None,
+    usuario_ids: Optional[str] = None,
+):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        query = """
+            SELECT n.id, n.usuario_id, u.nombre, n.fecha_inicio, n.fecha_fin, n.dias_trabajados,
+                   n.salario_basico, n.salario_proporcional, n.auxilio_transporte,
+                   n.valor_RN, n.valor_RDF, n.valor_RNDF, n.valor_HED, n.valor_HEN, n.valor_HEDDF, n.valor_HENDF,
+                   n.total_devengado, n.deducciones, n.neto_pagar, n.alertas_json
+            FROM nomina_quincenal n
+            JOIN usuarios u ON u.id = n.usuario_id
+        """
+        params = []
+        conditions = []
+        user_ids = parse_int_list(usuario_ids)
+        if fecha_inicio:
+            conditions.append("n.fecha_inicio >= %s")
+            params.append(fecha_inicio)
+        if fecha_fin:
+            conditions.append("n.fecha_fin <= %s")
+            params.append(fecha_fin)
+        if user_ids:
+            conditions.append("n.usuario_id = ANY(%s)")
+            params.append(user_ids)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY n.fecha_fin DESC, u.nombre"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        return [{
+            "id": row[0],
+            "usuario_id": row[1],
+            "empleado": row[2],
+            "fecha_inicio": str(row[3]),
+            "fecha_fin": str(row[4]),
+            "dias_trabajados": row[5],
+            "salario_basico": float(row[6] or 0),
+            "salario_proporcional": float(row[7] or 0),
+            "auxilio_transporte": float(row[8] or 0),
+            "valor_RN": float(row[9] or 0),
+            "valor_RDF": float(row[10] or 0),
+            "valor_RNDF": float(row[11] or 0),
+            "valor_HED": float(row[12] or 0),
+            "valor_HEN": float(row[13] or 0),
+            "valor_HEDDF": float(row[14] or 0),
+            "valor_HENDF": float(row[15] or 0),
+            "total_devengado": float(row[16] or 0),
+            "deducciones": float(row[17] or 0),
+            "neto_pagar": float(row[18] or 0),
+            "alertas": json.loads(row[19] or "[]"),
+        } for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/nomina/jornadas")
+def get_jornadas_procesadas(
+    fecha_inicio: Optional[str] = None,
+    fecha_fin: Optional[str] = None,
+    usuario_ids: Optional[str] = None,
+):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        query = """
+            SELECT j.id, j.usuario_id, u.nombre, COALESCE(u.estado_laboral, 'activo'), j.fecha, j.minutos_totales, j.minutos_almuerzo,
+                   j.minutos_ordinarios_diurnos, j.minutos_ordinarios_nocturnos,
+                   j.minutos_ordinarios_dom_fest_diurnos, j.minutos_ordinarios_dom_fest_nocturnos,
+                   j.minutos_extra_diurnos, j.minutos_extra_nocturnos,
+                   j.minutos_extra_dom_fest_diurnos, j.minutos_extra_dom_fest_nocturnos,
+                   j.alertas_json, j.inconsistente, j.ruta_id, COALESCE(j.vehiculo_placa, ''),
+                   COALESCE(h.nombre, '')
+            FROM jornadas_procesadas j
+            JOIN usuarios u ON u.id = j.usuario_id
+            LEFT JOIN horarios_contrato h ON h.id = j.horario_id
+        """
+        params = []
+        conditions = []
+        user_ids = parse_int_list(usuario_ids)
+        if fecha_inicio:
+            conditions.append("j.fecha >= %s")
+            params.append(fecha_inicio)
+        if fecha_fin:
+            conditions.append("j.fecha <= %s")
+            params.append(fecha_fin)
+        if user_ids:
+            conditions.append("j.usuario_id = ANY(%s)")
+            params.append(user_ids)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY j.fecha DESC, u.nombre"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        return [{
+            "id": row[0], "usuario_id": row[1], "empleado": row[2], "estado_laboral": row[3], "fecha": str(row[4]),
+            "minutos_totales": row[5], "minutos_almuerzo": row[6],
+            "minutos_ordinarios_diurnos": row[7], "minutos_ordinarios_nocturnos": row[8],
+            "minutos_ordinarios_dom_fest_diurnos": row[9], "minutos_ordinarios_dom_fest_nocturnos": row[10],
+            "minutos_extra_diurnos": row[11], "minutos_extra_nocturnos": row[12],
+            "minutos_extra_dom_fest_diurnos": row[13], "minutos_extra_dom_fest_nocturnos": row[14],
+            "alertas": json.loads(row[15] or "[]"), "inconsistente": bool(row[16]),
+            "ruta_id": row[17], "vehiculo_placa": row[18], "horario_nombre": row[19],
+        } for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
+
+
+@app.get("/nomina/dashboard")
+def get_nomina_dashboard(fecha_inicio: str, fecha_fin: str, usuario_ids: Optional[str] = None):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_nomina_schema(cur, conn)
+        fecha_ini = parse_date_safe(fecha_inicio)
+        fecha_fin_date = parse_date_safe(fecha_fin)
+        user_ids = parse_int_list(usuario_ids)
+        quincena_user_filter = ""
+        jornada_user_filter = ""
+        params_quincena = [fecha_ini, fecha_fin_date]
+        params_jornadas = [fecha_ini, fecha_fin_date]
+        if user_ids:
+            quincena_user_filter = " AND usuario_id = ANY(%s)"
+            jornada_user_filter = " AND j.usuario_id = ANY(%s)"
+            params_quincena.append(user_ids)
+            params_jornadas.append(user_ids)
+
+        cur.execute(f"""
+            SELECT
+                COALESCE(SUM(total_devengado), 0),
+                COALESCE(SUM(salario_proporcional), 0),
+                COALESCE(SUM(valor_HED + valor_HEN + valor_HEDDF + valor_HENDF), 0)
+            FROM nomina_quincenal
+            WHERE fecha_inicio = %s AND fecha_fin = %s
+            {quincena_user_filter}
+        """, params_quincena)
+        totales = cur.fetchone()
+        total_nomina = float(totales[0] or 0)
+        total_salario = float(totales[1] or 0)
+        total_extras = float(totales[2] or 0)
+        porcentaje_extras = round((total_extras / total_salario) * 100, 2) if total_salario else 0
+
+        cur.execute(f"""
+            SELECT
+                date_trunc('week', fecha)::date AS semana,
+                COALESCE(SUM(minutos_extra_diurnos + minutos_extra_nocturnos + minutos_extra_dom_fest_diurnos + minutos_extra_dom_fest_nocturnos), 0)
+            FROM jornadas_procesadas
+            WHERE fecha BETWEEN %s AND %s
+            {jornada_user_filter.replace('j.', '')}
+            GROUP BY 1
+            ORDER BY 1
+        """, params_jornadas)
+        por_semana = [{"semana": str(row[0]), "minutos_extra": int(row[1] or 0)} for row in cur.fetchall()]
+
+        cur.execute(f"""
+            SELECT
+                COALESCE(SUM(valor_RN), 0), COALESCE(SUM(valor_RDF), 0), COALESCE(SUM(valor_RNDF), 0),
+                COALESCE(SUM(valor_HED), 0), COALESCE(SUM(valor_HEN), 0), COALESCE(SUM(valor_HEDDF), 0), COALESCE(SUM(valor_HENDF), 0)
+            FROM nomina_quincenal
+            WHERE fecha_inicio = %s AND fecha_fin = %s
+            {quincena_user_filter}
+        """, params_quincena)
+        c = cur.fetchone()
+        conceptos = {
+            "RN": float(c[0] or 0), "RDF": float(c[1] or 0), "RNDF": float(c[2] or 0),
+            "HED": float(c[3] or 0), "HEN": float(c[4] or 0), "HEDDF": float(c[5] or 0), "HENDF": float(c[6] or 0),
+        }
+
+        cur.execute(f"""
+            SELECT u.nombre, COALESCE(SUM(j.minutos_extra_diurnos + j.minutos_extra_nocturnos + j.minutos_extra_dom_fest_diurnos + j.minutos_extra_dom_fest_nocturnos), 0)
+            FROM jornadas_procesadas j
+            JOIN usuarios u ON u.id = j.usuario_id
+            WHERE j.fecha BETWEEN %s AND %s
+            {jornada_user_filter}
+            GROUP BY u.nombre
+            HAVING COALESCE(SUM(j.minutos_extra_diurnos + j.minutos_extra_nocturnos + j.minutos_extra_dom_fest_diurnos + j.minutos_extra_dom_fest_nocturnos), 0) > 720
+            ORDER BY 2 DESC
+        """, params_jornadas)
+        extras_alert = [{"empleado": row[0], "minutos_extra": int(row[1] or 0)} for row in cur.fetchall()]
+
+        cur.execute(f"""
+            SELECT u.nombre, j.fecha, j.alertas_json
+            FROM jornadas_procesadas j
+            JOIN usuarios u ON u.id = j.usuario_id
+            WHERE j.fecha BETWEEN %s AND %s
+              {jornada_user_filter}
+              AND (j.inconsistente = TRUE OR j.alertas_json <> '[]')
+            ORDER BY j.fecha DESC
+        """, params_jornadas)
+        inconsistentes = [{
+            "empleado": row[0],
+            "fecha": str(row[1]),
+            "alertas": json.loads(row[2] or "[]"),
+        } for row in cur.fetchall()]
+
+        users = fetch_users_for_nomina(cur)
+        if user_ids:
+            users = [user_row for user_row in users if user_row["id"] in user_ids]
+        horarios_map = fetch_horarios_map(cur)
+        ausencias = []
+        for day in daterange(fecha_ini, fecha_fin_date):
+            if user_ids:
+                cur.execute("SELECT usuario_id FROM jornadas_procesadas WHERE fecha = %s AND usuario_id = ANY(%s)", (day, user_ids))
+            else:
+                cur.execute("SELECT usuario_id FROM jornadas_procesadas WHERE fecha = %s", (day,))
+            presentes = {row[0] for row in cur.fetchall()}
+            for user_row in users:
+                estado_laboral = (user_row.get("estado_laboral") or "activo").strip().lower()
+                if estado_laboral != "activo":
+                    continue
+                horario = horarios_map.get(user_row.get("horario_id"))
+                dias_laborables = horario.get("dias_laborables", [0, 1, 2, 3, 4]) if horario else [0, 1, 2, 3, 4]
+                if day.weekday() in dias_laborables and user_row["id"] not in presentes:
+                    ausencias.append({"empleado": user_row["nombre"], "fecha": str(day)})
+
+        return {
+            "total_nomina": total_nomina,
+            "porcentaje_extras_sobre_salario": porcentaje_extras,
+            "analisis_semana": por_semana,
+            "desglose_conceptos": conceptos,
+            "alertas": {
+                "empleados_mas_12h_extra": extras_alert,
+                "jornadas_inconsistentes": inconsistentes,
+                "ausencias_sin_validar": ausencias,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        release_conn(conn)
 
 # ============================================================
 # VEHICULOS
@@ -259,25 +2008,6 @@ def get_vehiculos():
     try:
         conn = get_conn()
         cur = conn.cursor()
-        for col_sql in [
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS marca TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS anio INTEGER",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS color TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS cilindraje TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS capacidad_carga TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS combustible TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS kilometraje INTEGER DEFAULT 0",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_serie TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_motor TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS soat_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tecnomecanica_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS seguro_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS observaciones TEXT DEFAULT ''",
-        ]:
-            try: cur.execute(col_sql); conn.commit()
-            except: conn.rollback()
         cur.execute("""
             SELECT id, placa, modelo, estado,
                    COALESCE(tipo,''), COALESCE(marca,''), COALESCE(anio,0),
@@ -511,47 +2241,10 @@ async def crear_tablas():
             )
         """); conn.commit()
 
-        # Tabla maestro de tipos de novedad
-        # Columnas adicionales vehiculos
-        for col in [
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS marca TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS anio INTEGER",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS color TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS cilindraje TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS capacidad_carga TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS combustible TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS kilometraje INTEGER DEFAULT 0",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_serie TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_motor TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS soat_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tecnomecanica_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS seguro_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS observaciones TEXT DEFAULT ''",
-        ]:
-            try: cur.execute(col); conn.commit()
-            except: pass
-
-        for col in [
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS marca TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS anio INTEGER",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS color TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS cilindraje TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS capacidad_carga TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS combustible TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS kilometraje INTEGER DEFAULT 0",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_serie TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS num_motor TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS soat_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tecnomecanica_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS seguro_vence TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario TEXT DEFAULT ''",
-            "ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS observaciones TEXT DEFAULT ''",
-        ]:
-            try: cur.execute(col); conn.commit()
-            except: pass
+        ensure_usuario_columns(cur, conn)
+        ensure_vehiculo_columns(cur, conn)
+        ensure_roles_schema(cur, conn)
+        ensure_nomina_schema(cur, conn)
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS maestro_novedades_tipo (
@@ -1165,21 +2858,36 @@ def asistencia_detalle(
 
 @app.put("/personal/{uid}")
 def editar_personal(uid: int, p: PersonalCreate):
+    conn = None
     try:
         conn = get_conn()
         cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        ensure_nomina_schema(cur, conn)
+        role_id = p.role_id
+        role_code = p.rol
+        if role_id:
+            role_info = fetch_role_by_id(cur, role_id)
+            if not role_info:
+                raise HTTPException(status_code=404, detail="Rol no encontrado")
+            role_code = role_info["codigo"]
         cur.execute("""
             UPDATE usuarios SET
                 nombre = %s, documento = %s, empresa = %s,
-                salario_base = %s, tasa_extra = %s, rol = %s
+                salario_base = %s, tasa_extra = %s, rol = %s, role_id = %s,
+                costo_servicio = %s, horario_id = %s, estado_laboral = %s
             WHERE id = %s
         """, (p.nombre, p.doc, p.empresa,
-              float(p.salario or 0), float(p.extra or 0), p.rol, uid))
+              float(p.salario or 0), float(p.extra or 0), role_code, role_id,
+              float(p.costo or 0), p.horario_id, p.estado_laboral or "activo", uid))
         conn.commit()
-        release_conn(conn)
         return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
 
 @app.patch("/personal/{uid}/estado")
 def toggle_personal(uid: int, activo: bool):
@@ -1195,6 +2903,34 @@ def toggle_personal(uid: int, activo: bool):
         return {"ok": True, "activo": activo}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/personal/{uid}/rol")
+def asignar_rol_personal(uid: int, role_id: int):
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_roles_schema(cur, conn)
+        role_info = fetch_role_by_id(cur, role_id)
+        if not role_info:
+            raise HTTPException(status_code=404, detail="Rol no encontrado")
+        if not role_info["activo"]:
+            raise HTTPException(status_code=400, detail="No puedes asignar un rol inactivo")
+        cur.execute("""
+            UPDATE usuarios
+            SET role_id = %s,
+                rol = %s
+            WHERE id = %s
+        """, (role_info["id"], role_info["codigo"], uid))
+        conn.commit()
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        release_conn(conn)
 
 
 # ==================== GPS TRACKING ====================
@@ -1600,7 +3336,12 @@ def editar_referencia(rid: int, r: ReferenciaCreate):
 
 # ==================== ENDPOINTS ORDENES ====================
 @app.get("/ordenes")
-def get_ordenes(estado: str = None, tecnico_id: int = None):
+def get_ordenes(
+    estado: str = None,
+    tecnico_id: int = None,
+    fecha_inicio: Optional[str] = None,
+    fecha_fin: Optional[str] = None,
+):
     conn = None
     try:
         conn = get_conn(); cur = conn.cursor()
@@ -1610,6 +3351,12 @@ def get_ordenes(estado: str = None, tecnico_id: int = None):
             conditions.append("o.estado = %s"); params.append(estado)
         if tecnico_id:
             conditions.append("o.tecnico_id = %s"); params.append(tecnico_id)
+        if fecha_inicio:
+            conditions.append("o.fecha_creacion >= %s::date")
+            params.append(fecha_inicio)
+        if fecha_fin:
+            conditions.append("o.fecha_creacion < (%s::date + INTERVAL '1 day')")
+            params.append(fecha_fin)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         cur.execute(f"""
             SELECT o.id, o.consecutivo, o.tipo_servicio, o.estado,

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { C, API_URL } from "../shared/constants";
 import { Card, Btn, KPI, PageHeader, Toast } from "../shared/ui";
+import { can } from "../shared/permissions";
 
 // ============================================================
 // HELPERS
@@ -43,9 +44,10 @@ const exportarCSV = (datos, nombre) => {
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
-const Reportes = ({ onBack }) => {
+const Reportes = ({ onBack, user }) => {
   const [ordenes, setOrdenes]       = useState([]);
   const [horasExtra, setHorasExtra] = useState([]);
+  const [nominaDashboard, setNominaDashboard] = useState(null);
   const [loading, setLoading]       = useState(false);
   const [toast, setToast]           = useState(null);
   const [tab, setTab]               = useState("resumen");
@@ -60,15 +62,18 @@ const Reportes = ({ onBack }) => {
   const [filtroTecnico, setFiltroTecnico] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
+  const canExport = can(user, "reportes", "export") || can(user, "servicios", "export");
 
   const cargar = async () => {
     setLoading(true);
     try {
       const [ords, extra] = await Promise.all([
-        fetch(`${API_URL}/ordenes`).then(x => x.json()).catch(() => []),
+        fetch(`${API_URL}/ordenes?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`).then(x => x.json()).catch(() => []),
         fetch(`${API_URL}/reportes/horas-extra?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`)
           .then(x => x.json()).catch(() => []),
       ]);
+      const nomina = await fetch(`${API_URL}/nomina/dashboard?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`)
+        .then(x => x.json()).catch(() => null);
       const ordsArr = Array.isArray(ords) ? ords : [];
       console.log("=== REPORTES DEBUG ===");
       console.log("Total ordenes:", ordsArr.length);
@@ -82,6 +87,7 @@ const Reportes = ({ onBack }) => {
       }
       setOrdenes(ordsArr);
       setHorasExtra(Array.isArray(extra) ? extra : []);
+      setNominaDashboard(nomina && typeof nomina === "object" ? nomina : null);
     } catch(err) {
       console.error("Error en cargar:", err);
     }
@@ -136,6 +142,10 @@ const Reportes = ({ onBack }) => {
 
   // ---- Descargar PDF de una orden ----
   const descargarPDF = async (ord) => {
+    if (!canExport) {
+      setToast({ msg: "No tienes permiso para descargar reportes", type: "error" });
+      return;
+    }
     setDescargando(ord.id);
     try {
       const res = await fetch(`${API_URL}/ordenes/${ord.id}/reporte-pdf`);
@@ -256,6 +266,7 @@ const Reportes = ({ onBack }) => {
           ["servicios", "Servicios"],
           ["tecnicos",  "Tecnicos"],
           ["horas",     "Horas Extra"],
+          ["nomina",    "Gerencial Nomina"],
         ].map(([k, l]) => (
           <div key={k} onClick={() => setTab(k)} style={tabStyle(k)}>{l}</div>
         ))}
@@ -326,7 +337,7 @@ const Reportes = ({ onBack }) => {
           </Card>
 
           {/* Acciones exportar */}
-          <Card>
+          {canExport && <Card>
             <div style={{ fontWeight: 700, fontSize: 13, color: C.muted, marginBottom: 14 }}>EXPORTAR</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <Btn variant="ghost" style={{ textAlign: "left", fontSize: 12 }}
@@ -359,7 +370,7 @@ const Reportes = ({ onBack }) => {
                 Horas extra (.csv)
               </Btn>
             </div>
-          </Card>
+          </Card>}
         </div>
       )}
 
@@ -372,7 +383,7 @@ const Reportes = ({ onBack }) => {
             <div style={{ fontSize: 13, color: C.muted }}>
               {ordenesPeriodo.length} orden(es) en el periodo
             </div>
-            <Btn variant="ghost" style={{ fontSize: 11 }}
+            {canExport && <Btn variant="ghost" style={{ fontSize: 11 }}
               onClick={() => exportarCSV(ordenesPeriodo.map(o => ({
                 consecutivo: o.consecutivo, estado: o.estado,
                 tipo: o.tipo_servicio, cliente: o.cliente_nombre,
@@ -384,7 +395,7 @@ const Reportes = ({ onBack }) => {
                 factura: o.num_factura || ""
               })), `servicios-${fechaInicio}-${fechaFin}`)}>
               Exportar CSV
-            </Btn>
+            </Btn>}
           </div>
           <Card style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ overflowX: "auto" }}>
@@ -431,7 +442,7 @@ const Reportes = ({ onBack }) => {
                           {fmtFecha(o.fecha_creacion)}
                         </td>
                         <td style={tdS(i)}>
-                          {(o.estado === "cerrada" || o.estado === "no_ejecutada") && (
+                          {canExport && (o.estado === "cerrada" || o.estado === "no_ejecutada") && (
                             <Btn variant="ghost"
                               onClick={() => descargarPDF(o)}
                               disabled={descargando === o.id}
@@ -457,14 +468,14 @@ const Reportes = ({ onBack }) => {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ fontSize: 13, color: C.muted }}>{porTecnico.length} técnico(s)</div>
-            <Btn variant="ghost" style={{ fontSize: 11 }}
+            {canExport && <Btn variant="ghost" style={{ fontSize: 11 }}
               onClick={() => exportarCSV(porTecnico.map(t => ({
                 tecnico: t.tecnico, total: t.total, completados: t.completados,
                 no_ejecutados: t.total - t.completados,
                 eficiencia_pct: t.eficiencia, duracion_prom_min: t.dur_prom
               })), `tecnicos-${fechaInicio}-${fechaFin}`)}>
               Exportar CSV
-            </Btn>
+            </Btn>}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {porTecnico.length === 0 && (
@@ -526,7 +537,7 @@ const Reportes = ({ onBack }) => {
             <div style={{ fontSize: 13, color: C.muted }}>
               {horasExtra.length} registro(s) &nbsp;|&nbsp; Total: <strong>{fmt(horasExtra.reduce((a, h) => a + (h.total_a_pagar || 0), 0))}</strong>
             </div>
-            <Btn variant="ghost" style={{ fontSize: 11 }}
+            {canExport && <Btn variant="ghost" style={{ fontSize: 11 }}
               onClick={() => exportarCSV(horasExtra.map(h => ({
                 empleado: h.empleado, fecha: h.fecha,
                 horas_diurnas: h.horas_extra_diurnas, horas_nocturnas: h.horas_extra_nocturnas,
@@ -534,7 +545,7 @@ const Reportes = ({ onBack }) => {
                 total: h.total_a_pagar
               })), `horas-extra-${fechaInicio}-${fechaFin}`)}>
               Exportar CSV
-            </Btn>
+            </Btn>}
           </div>
           <Card style={{ padding: 0, overflow: "hidden" }}>
             {horasExtra.length === 0 ? (
@@ -581,6 +592,83 @@ const Reportes = ({ onBack }) => {
                 </table>
               </div>
             )}
+          </Card>
+        </div>
+      )}
+
+      {tab === "nomina" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+          <Card>
+            <div style={{ fontWeight: 700, fontSize: 13, color: C.muted, marginBottom: 14 }}>RESUMEN DIARIO / QUINCENAL</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12 }}>Total nomina</span>
+                <strong>{fmt(nominaDashboard?.total_nomina || 0)}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12 }}>% extras sobre salario base</span>
+                <strong>{nominaDashboard?.porcentaje_extras_sobre_salario || 0}%</strong>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <div style={{ fontWeight: 700, fontSize: 13, color: C.muted, marginBottom: 14 }}>ANALISIS POR SEMANA</div>
+            {(nominaDashboard?.analisis_semana || []).length === 0 ? (
+              <div style={{ fontSize: 12, color: C.muted }}>Sin datos para el periodo.</div>
+            ) : (
+              (nominaDashboard?.analisis_semana || []).map((item) => (
+                <div key={item.semana} style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
+                    <span>{item.semana}</span>
+                    <strong>{fmtDur(item.minutos_extra)}</strong>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: C.border }}>
+                    <div style={{ height: 6, borderRadius: 3, width: `${Math.min(100, (item.minutos_extra / 720) * 100)}%`, background: "#14B8A6" }} />
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
+
+          <Card>
+            <div style={{ fontWeight: 700, fontSize: 13, color: C.muted, marginBottom: 14 }}>DESGLOSE DE CONCEPTOS</div>
+            {Object.entries(nominaDashboard?.desglose_conceptos || {}).map(([key, value]) => (
+              <div key={key} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>{key}</span>
+                <span style={{ fontSize: 12 }}>{fmt(value)}</span>
+              </div>
+            ))}
+          </Card>
+
+          <Card>
+            <div style={{ fontWeight: 700, fontSize: 13, color: C.muted, marginBottom: 14 }}>ALERTAS</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#F59E0B", marginBottom: 6 }}>Mas de 12h extra</div>
+                {(nominaDashboard?.alertas?.empleados_mas_12h_extra || []).slice(0, 4).map((item, index) => (
+                  <div key={index} style={{ fontSize: 11, color: C.text, marginBottom: 4 }}>
+                    {item.empleado} - {fmtDur(item.minutos_extra)}
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#EF4444", marginBottom: 6 }}>Jornadas inconsistentes</div>
+                {(nominaDashboard?.alertas?.jornadas_inconsistentes || []).slice(0, 4).map((item, index) => (
+                  <div key={index} style={{ fontSize: 11, color: C.text, marginBottom: 4 }}>
+                    {item.empleado} - {item.fecha}
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#8B5CF6", marginBottom: 6 }}>Ausencias sin validar</div>
+                {(nominaDashboard?.alertas?.ausencias_sin_validar || []).slice(0, 4).map((item, index) => (
+                  <div key={index} style={{ fontSize: 11, color: C.text, marginBottom: 4 }}>
+                    {item.empleado} - {item.fecha}
+                  </div>
+                ))}
+              </div>
+            </div>
           </Card>
         </div>
       )}
