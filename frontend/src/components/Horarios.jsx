@@ -11,9 +11,9 @@ import { can } from "../shared/permissions";
 const ORDEN_MARCAS = ["INGRESO", "ALMUERZO", "RETORNO", "CIERRE"];
 
 const MARCAS_CFG = {
-  INGRESO:  { label: "Inicio Jornada",   desc: "Registra tu entrada al trabajo",      color: "#06D6A0", icon: "I" },
+  INGRESO:  { label: "Inicio Jornada",   desc: "Registra tu entrada al trabajo",      color: "#2563EB", icon: "I" },
   ALMUERZO: { label: "Salida Almuerzo",  desc: "Registra tu salida a almorzar",       color: "#F59E0B", icon: "A" },
-  RETORNO:  { label: "Retorno Almuerzo", desc: "Registra tu regreso del almuerzo",    color: "#00B4D8", icon: "R" },
+  RETORNO:  { label: "Retorno Almuerzo", desc: "Registra tu regreso del almuerzo",    color: "#06D6A0", icon: "R" },
   CIERRE:   { label: "Fin Jornada",      desc: "Registra tu salida al final del dia", color: "#8B5CF6", icon: "C" },
 };
 
@@ -1132,46 +1132,50 @@ const Horarios = ({ onBack, user }) => {
           const yaHizo     = ultimaMarca &&
             ORDEN_MARCAS.indexOf(ultimaMarca) >= ORDEN_MARCAS.indexOf(tipo);
           return (
-            <Card key={tipo}
-              onClick={() => habilitada && !loading ? realizarMarcacion(tipo) : null}
+            <Card key={tipo} onClick={habilitada && !loading ? () => realizarMarcacion(tipo) : null}
               style={{
-                borderLeft: "4px solid " + (habilitada ? m.color : C.border),
-                opacity: habilitada ? 1 : 0.4,
+                borderLeft: `4px solid ${habilitada ? m.color : "#E5E7EB"}`,
+                opacity: habilitada ? 1 : 0.45,
                 cursor: habilitada && !loading ? "pointer" : "not-allowed",
-                background: habilitada ? m.color + "06" : C.card,
+                background: yaHizo ? m.color + "08" : habilitada ? "#fff" : "#F9FAFB",
                 transition: "all 0.2s", position: "relative",
-              }}>
+                boxShadow: habilitada && !yaHizo ? `0 2px 12px ${m.color}20` : "none",
+              }}
+              onMouseEnter={e => { if (habilitada && !yaHizo) e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+            >
               {yaHizo && (
-                <div style={{ position: "absolute", top: 10, right: 10, width: 18, height: 18,
-                  borderRadius: "50%", background: m.color, display: "flex",
-                  alignItems: "center", justifyContent: "center",
-                  fontSize: 10, color: "white", fontWeight: 900 }}>
-                  {m.icon}
-                </div>
+                <div style={{ position: "absolute", top: 12, right: 12, width: 22, height: 22,
+                  borderRadius: "50%", background: m.color,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, color: "white", fontWeight: 900 }}>✓</div>
               )}
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-                  background: (habilitada ? m.color : C.muted) + "18",
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+                  background: (habilitada ? m.color : "#6B7280") + "18",
+                  border: `2px solid ${(habilitada ? m.color : "#6B7280")}30`,
                   display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ width: 16, height: 16, borderRadius: "50%",
-                    background: habilitada ? m.color : C.muted }} />
+                    background: habilitada ? m.color : "#6B7280",
+                    boxShadow: habilitada ? `0 0 8px ${m.color}60` : "none" }} />
                 </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 13,
-                    color: habilitada ? C.text : C.muted }}>{m.label}</div>
-                  <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                    {yaHizo ? "Ya registrado" : habilitada ? m.desc : "No disponible aun"}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: habilitada ? "#111111" : "#6B7280" }}>{m.label}</div>
+                  <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>
+                    {yaHizo ? "Registrado correctamente" : habilitada ? m.desc : "No disponible aun"}
                   </div>
                 </div>
+                {habilitada && !yaHizo && (
+                  <div style={{ width: 32, height: 32, borderRadius: "50%",
+                    background: m.color + "15", border: `1.5px solid ${m.color}40`,
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                      stroke={m.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 18l6-6-6-6"/>
+                    </svg>
+                  </div>
+                )}
               </div>
-              {loading && habilitada && (
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 8,
-                  display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ display: "inline-block", width: 6, height: 6,
-                    borderRadius: "50%", background: m.color }} />
-                  {gpsEstado === "obteniendo" ? "Capturando GPS..." : "Registrando..."}
-                </div>
-              )}
             </Card>
           );
         })}

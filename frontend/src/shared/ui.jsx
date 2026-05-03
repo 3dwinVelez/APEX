@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { API_URL, C } from "./constants";
-import logo from "../assets/logo1.JPG";
+import logo from "../assets/logo3.JPG";
 
 const Badge = ({ children, color = C.success }) => (
   <span style={{
@@ -304,27 +304,56 @@ const Login = ({ onLogin }) => {
         flex: 1, display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center",
         padding: 48, position: "relative",
+        background: "linear-gradient(135deg, #0a0a0a 0%, #111827 50%, #0f1729 100%)",
       }}>
-        <img src={logo} alt="APEX" style={{ width: 220, objectFit: "contain", marginBottom: 32 }} />
-        <div style={{ fontSize: 16, color: "rgba(255,255,255,0.5)", fontWeight: 400, letterSpacing: 0.5, textAlign: "center" }}>
-          Gestiona facil, crece rapido
-        </div>
-        <div style={{ marginTop: 48, display: "flex", flexDirection: "column", gap: 16, width: "100%", maxWidth: 280 }}>
-          {[
-            { icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", label: "Seguro y confiable" },
-            { icon: "M13 10V3L4 14h7v7l9-11h-7z", label: "Rapido y eficiente" },
-            { icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", label: "Datos en tiempo real" },
-          ].map((item, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(37,99,235,0.2)",
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d={item.icon} />
-                </svg>
+        {/* Grid decorativo de fondo */}
+        <div style={{
+          position: "absolute", inset: 0, pointerEvents: "none",
+          backgroundImage: "linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
+        }} />
+        {/* Circulo de luz */}
+        <div style={{
+          position: "absolute", top: "30%", left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 400, height: 400, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }} />
+
+        <div style={{ position: "relative", zIndex: 1, textAlign: "center", width: "100%", maxWidth: 340 }}>
+          {/* Logo grande */}
+          <img src={logo} alt="APEX" style={{ width: 280, objectFit: "contain", marginBottom: 8 }} />
+
+          {/* Linea separadora */}
+          <div style={{ width: 48, height: 2, background: "#2563EB", borderRadius: 2, margin: "20px auto" }} />
+
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", fontWeight: 400, letterSpacing: 1, marginBottom: 48 }}>
+            Sistema de gestion operativa
+          </div>
+
+          {/* Features */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {[
+              { icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", label: "Seguro y confiable", sub: "Datos protegidos con JWT" },
+              { icon: "M13 10V3L4 14h7v7l9-11h-7z", label: "Tiempo real", sub: "GPS y marcaciones en vivo" },
+              { icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", label: "Reportes inteligentes", sub: "KPIs y estadisticas avanzadas" },
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, textAlign: "left" }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10,
+                  background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.25)",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={item.icon} />
+                  </svg>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{item.label}</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 1 }}>{item.sub}</div>
+                </div>
               </div>
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{item.label}</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 

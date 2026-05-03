@@ -34,26 +34,32 @@ const RoleMatrix = ({ permissions, onToggle, disabled }) => (
           {moduleItem.actions.map((action) => {
             const checked = Boolean(permissions?.[moduleItem.key]?.[action]);
             return (
-              <label
-                key={action}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  background: checked ? `${C.accent}12` : C.bg,
-                  border: `1px solid ${checked ? `${C.accent}40` : C.border}`,
-                  opacity: disabled ? 0.7 : 1,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabled}
+              <label key={action} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 10px", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+                background: checked ? "#2563EB10" : "#F9FAFB",
+                border: `1px solid ${checked ? "#2563EB40" : "#E5E7EB"}`,
+                transition: "all 0.15s", opacity: disabled ? 0.6 : 1,
+              }}>
+                <div style={{
+                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                  background: checked ? "#2563EB" : "#fff",
+                  border: `2px solid ${checked ? "#2563EB" : "#D1D5DB"}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.15s"
+                }}>
+                  {checked && (
+                    <svg width="8" height="8" viewBox="0 0 10 8" fill="none">
+                      <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <input type="checkbox" checked={checked} disabled={disabled}
                   onChange={() => onToggle(moduleItem.key, action)}
-                />
-                <span style={{ fontSize: 12, fontWeight: 700 }}>{ACTION_LABELS[action] || action}</span>
+                  style={{ display: "none" }} />
+                <span style={{ fontSize: 11, fontWeight: checked ? 600 : 400, color: checked ? "#2563EB" : "#6B7280" }}>
+                  {ACTION_LABELS[action] || action}
+                </span>
               </label>
             );
           })}
@@ -264,58 +270,78 @@ const Roles = ({ onBack, user }) => {
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                {roles.map((role) => (
-                  <div
-                    key={role.id}
-                    style={{
-                      padding: 14,
-                      borderRadius: 12,
-                      background: editingRole?.id === role.id ? `${C.accent}10` : C.bg,
-                      border: `1px solid ${editingRole?.id === role.id ? `${C.accent}35` : C.border}`,
+                {roles.map((role) => {
+                  const isEditing = editingRole?.id === role.id;
+                  const permCount = Object.values(role.permissions || {}).reduce((a, m) =>
+                    a + Object.values(m).filter(Boolean).length, 0);
+                  return (
+                    <div key={role.id} onClick={() => canEditRoles && startEdit(role)} style={{
+                      padding: "16px", borderRadius: 14, cursor: canEditRoles ? "pointer" : "default",
+                      background: isEditing ? "#2563EB08" : "#fff",
+                      border: `1.5px solid ${isEditing ? "#2563EB" : "#E5E7EB"}`,
+                      transition: "all 0.2s",
                     }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontWeight: 800 }}>{role.nombre}</div>
-                        <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{role.descripcion || "Sin descripcion"}</div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                          <span style={{
-                            padding: "3px 8px",
-                            borderRadius: 20,
-                            fontSize: 10,
-                            fontWeight: 700,
+                      onMouseEnter={e => { if (!isEditing) e.currentTarget.style.borderColor = "#2563EB50"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                      onMouseLeave={e => { if (!isEditing) e.currentTarget.style.borderColor = "#E5E7EB"; e.currentTarget.style.transform = "none"; }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: "#111111", marginBottom: 3 }}>{role.nombre}</div>
+                          <div style={{ fontSize: 11, color: "#6B7280" }}>{role.descripcion || "Sin descripcion"}</div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                          <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 10, fontWeight: 700,
                             background: role.activo ? "#06D6A015" : "#EF444415",
-                            color: role.activo ? "#06D6A0" : "#EF4444",
-                          }}>
+                            color: role.activo ? "#06D6A0" : "#EF4444" }}>
                             {role.activo ? "ACTIVO" : "INACTIVO"}
                           </span>
                           {role.es_sistema && (
-                            <span style={{
-                              padding: "3px 8px",
-                              borderRadius: 20,
-                              fontSize: 10,
-                              fontWeight: 700,
-                              background: "#0D1B2A12",
-                              color: C.dark,
-                            }}>
-                              SISTEMA
-                            </span>
+                            <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 9, fontWeight: 700,
+                              background: "#2563EB12", color: "#2563EB" }}>SISTEMA</span>
                           )}
                         </div>
                       </div>
-                    </div>
 
-                    <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                      {canCreateRoles && <Btn variant="ghost" onClick={() => startCreate(role)}>CLONAR</Btn>}
-                      {canEditRoles && <Btn onClick={() => startEdit(role)}>EDITAR</Btn>}
-                      {canEditRoles && (
-                        <Btn variant="ghost" onClick={() => toggleEstadoRol(role)}>
-                          {role.activo ? "DESACTIVAR" : "ACTIVAR"}
-                        </Btn>
-                      )}
+                      {/* Barra de permisos visual */}
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#6B7280", marginBottom: 4 }}>
+                          <span>Permisos configurados</span>
+                          <span style={{ fontWeight: 700, color: "#2563EB" }}>{permCount}</span>
+                        </div>
+                        <div style={{ height: 4, background: "#F3F4F6", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 4, background: "#2563EB",
+                            width: `${Math.min((permCount / 40) * 100, 100)}%`, transition: "width 0.5s ease" }} />
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+                        {canCreateRoles && (
+                          <button onClick={() => startCreate(role)} style={{
+                            padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                            background: "#F3F4F6", border: "1px solid #E5E7EB", color: "#6B7280",
+                            cursor: "pointer", fontFamily: "inherit"
+                          }}>Clonar</button>
+                        )}
+                        {canEditRoles && (
+                          <button onClick={() => startEdit(role)} style={{
+                            padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                            background: "#2563EB", border: "none", color: "#fff",
+                            cursor: "pointer", fontFamily: "inherit"
+                          }}>Editar</button>
+                        )}
+                        {canEditRoles && (
+                          <button onClick={() => toggleEstadoRol(role)} style={{
+                            padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                            background: role.activo ? "#FEF2F2" : "#F0FDF4",
+                            border: `1px solid ${role.activo ? "#FECACA" : "#BBF7D0"}`,
+                            color: role.activo ? "#EF4444" : "#06D6A0",
+                            cursor: "pointer", fontFamily: "inherit"
+                          }}>{role.activo ? "Desactivar" : "Activar"}</button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </Card>
           </div>
