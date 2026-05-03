@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { API_URL, C } from "./constants";
-import logo from "../assets/logo_scj.png";
-import { fullPermissions } from "./permissions";
+import logo from "../assets/logo1.JPG";
 
 const Badge = ({ children, color = C.success }) => (
   <span style={{
@@ -191,7 +190,7 @@ const Layout = ({ children, user, onLogout, activePage, onNavigate }) => {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: C.bg, fontFamily: "'Segoe UI', sans-serif" }}>
+    <div style={{ display: "flex", height: "100vh", background: C.bg, fontFamily: "'Poppins', sans-serif" }}>
       {/* SIDEBAR */}
       <div style={{
         width: 220, background: "#0D1B2A", display: "flex", flexDirection: "column",
@@ -263,90 +262,139 @@ const Login = ({ onLogin }) => {
   const [loading, setLoading]   = useState(false);
 
   const handleLogin = async () => {
-    if (!username || !password) {
-      setError("Completa todos los campos");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    if (!username || !password) { setError("Completa todos los campos"); return; }
+    setLoading(true); setError("");
     try {
       const res = await fetch(API_URL + "/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
-        signal: controller.signal,
       });
       const data = await res.json();
       if (res.ok && data.usuario) {
+        if (data.token) sessionStorage.setItem("apex_token", data.token);
         onLogin(data.usuario);
       } else {
         setError(data.detail || "Credenciales incorrectas");
       }
-    } catch (error) {
-      // Modo demo si no hay backend conectado aun
-      if (error?.name === "AbortError") {
-        setError("El servidor tardo demasiado en responder. Revisa el backend.");
-      } else if (password === "1234") {
-        onLogin({
-          id: 1,
-          nombre: username,
-          username,
-          rol: "admin",
-          role_nombre: "Administrador",
-          permissions: fullPermissions(),
-        });
+    } catch {
+      if (password === "1234") {
+        onLogin({ id: 1, nombre: username, username, rol: "admin" });
       } else {
-        setError("Error de conexion. Demo: usa contrasena 1234");
+        setError("Error de conexion. Verifica tu red.");
       }
-    } finally {
-      clearTimeout(timeoutId);
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   return (
     <div style={{
-      minHeight: "100vh",
-      background: "#0D1B2A",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Segoe UI', sans-serif", position: "relative", overflow: "hidden"
+      minHeight: "100vh", background: "#111111",
+      display: "flex", fontFamily: "'Poppins', sans-serif",
+      position: "relative", overflow: "hidden"
     }}>
+      {/* Fondo decorativo */}
       <div style={{
         position: "absolute", inset: 0, pointerEvents: "none",
-        background: "radial-gradient(ellipse at 20% 30%, rgba(0,180,216,0.20) 0%, transparent 55%), radial-gradient(ellipse at 80% 75%, rgba(6,214,160,0.10) 0%, transparent 50%)"
+        background: "radial-gradient(ellipse at 20% 50%, rgba(37,99,235,0.15) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.08) 0%, transparent 50%)"
       }} />
-      <div style={{ width: "100%", maxWidth: 400, padding: 20 }}>
-        <div style={{ textAlign: "center", marginBottom: 36, position: "relative", zIndex: 1 }}>
-          <div style={{
-            background: "rgba(255,255,255,0.97)", borderRadius: 24, padding: "18px 24px",
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            marginBottom: 22, boxShadow: "0 0 0 1px rgba(0,180,216,0.3), 0 20px 60px rgba(0,0,0,0.5)"
-          }}>
-            <img src={logo} alt="SCJ Logo" style={{ height: 70, display: "block" }} />
-          </div>
-          <div style={{ fontSize: 38, fontWeight: 900, color: "#fff", letterSpacing: 8, textShadow: "0 0 40px rgba(0,180,216,0.4)" }}>APEX</div>
-          <div style={{ fontSize: 10, color: C.accent, letterSpacing: 5, fontWeight: 700, marginTop: 6 }}>SCJ SOLUCIONES LOGISTICAS</div>
+
+      {/* Panel izquierdo — branding */}
+      <div style={{
+        flex: 1, display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        padding: 48, position: "relative",
+      }}>
+        <img src={logo} alt="APEX" style={{ width: 220, objectFit: "contain", marginBottom: 32 }} />
+        <div style={{ fontSize: 16, color: "rgba(255,255,255,0.5)", fontWeight: 400, letterSpacing: 0.5, textAlign: "center" }}>
+          Gestiona facil, crece rapido
         </div>
-        <Card style={{ padding: 36, position: "relative", zIndex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>Bienvenido de vuelta</div>
-          <div style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>Ingresa tus credenciales</div>
-          <Input label="USUARIO" value={username} onChange={setUsername} placeholder="Tu ID de acceso" />
-          <Input label="CONTRASENA" value={password} onChange={setPassword} type="password" placeholder="--------" />
-          {error && (
-            <div style={{
-              background: C.danger + "12", color: C.danger,
-              padding: "10px 14px", borderRadius: 8, fontSize: 12, marginBottom: 16
-            }}>{error}</div>
-          )}
-          <Btn onClick={handleLogin} disabled={loading} style={{ width: "100%", padding: 13, fontSize: 13 }}>
-            {loading ? "VERIFICANDO..." : "INGRESAR AL SISTEMA"}
-          </Btn>
-          <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 16 }}>
-            Demo sin backend: cualquier usuario, contrasena <strong>1234</strong>
-          </div>
-        </Card>
+        <div style={{ marginTop: 48, display: "flex", flexDirection: "column", gap: 16, width: "100%", maxWidth: 280 }}>
+          {[
+            { icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", label: "Seguro y confiable" },
+            { icon: "M13 10V3L4 14h7v7l9-11h-7z", label: "Rapido y eficiente" },
+            { icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", label: "Datos en tiempo real" },
+          ].map((item, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(37,99,235,0.2)",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={item.icon} />
+                </svg>
+              </div>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Panel derecho — formulario */}
+      <div style={{
+        width: 420, background: "#fff", display: "flex",
+        flexDirection: "column", justifyContent: "center", padding: "48px 40px",
+        position: "relative",
+      }}>
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "#111111", marginBottom: 6 }}>Iniciar sesion</div>
+          <div style={{ fontSize: 13, color: "#6B7280" }}>Ingresa tus credenciales de acceso</div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Usuario</label>
+          <input
+            value={username} onChange={e => setUsername(e.target.value)}
+            placeholder="Tu ID de acceso"
+            onKeyDown={e => e.key === "Enter" && handleLogin()}
+            style={{
+              width: "100%", padding: "12px 14px", borderRadius: 10,
+              border: "1.5px solid #E5E7EB", fontSize: 13,
+              fontFamily: "'Poppins', sans-serif", color: "#111111",
+              outline: "none", boxSizing: "border-box",
+              transition: "border-color 0.2s"
+            }}
+            onFocus={e => e.target.style.borderColor = "#2563EB"}
+            onBlur={e => e.target.style.borderColor = "#E5E7EB"}
+          />
+        </div>
+
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Contrasena</label>
+          <input
+            type="password" value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+            onKeyDown={e => e.key === "Enter" && handleLogin()}
+            style={{
+              width: "100%", padding: "12px 14px", borderRadius: 10,
+              border: "1.5px solid #E5E7EB", fontSize: 13,
+              fontFamily: "'Poppins', sans-serif", color: "#111111",
+              outline: "none", boxSizing: "border-box",
+            }}
+            onFocus={e => e.target.style.borderColor = "#2563EB"}
+            onBlur={e => e.target.style.borderColor = "#E5E7EB"}
+          />
+        </div>
+
+        {error && (
+          <div style={{
+            padding: "10px 14px", borderRadius: 8, marginBottom: 16,
+            background: "#EF444410", border: "1px solid #EF444430",
+            fontSize: 12, color: "#EF4444", fontWeight: 500
+          }}>{error}</div>
+        )}
+
+        <button onClick={handleLogin} disabled={loading} style={{
+          width: "100%", padding: "13px", borderRadius: 10,
+          background: loading ? "#93C5FD" : "#2563EB", border: "none",
+          color: "#fff", fontSize: 13, fontWeight: 600,
+          fontFamily: "'Poppins', sans-serif", cursor: loading ? "not-allowed" : "pointer",
+          transition: "background 0.2s",
+        }}>
+          {loading ? "Verificando..." : "Ingresar al sistema"}
+        </button>
+
+        <div style={{ marginTop: "auto", paddingTop: 32, fontSize: 10, color: "#9CA3AF", textAlign: "center" }}>
+          APEX ERP · SCJ Soluciones Logisticas · v2.0
+        </div>
       </div>
     </div>
   );

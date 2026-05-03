@@ -1256,98 +1256,165 @@ const Servicios = ({ onBack, user }) => {
 
   // ---- VISTA LISTA ----
   const kpis = [
-    { label:"PENDIENTES", val:ordenes.filter(o=>o.estado==="pendiente").length, color:"#94A3B8" },
-    { label:"EN CURSO",   val:ordenes.filter(o=>["en_curso","fachada","inspeccion","ejecucion"].includes(o.estado)).length, color:"#F59E0B" },
-    { label:"CERRADAS",   val:ordenes.filter(o=>o.estado==="cerrada").length, color:"#06D6A0" },
-    { label:"TOTAL",      val:ordenes.length, color:C.accent },
+    { label:"PENDIENTES", val:ordenes.filter(o=>o.estado==="pendiente").length,                                                     color:"#94A3B8", icon:"M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
+    { label:"EN CURSO",   val:ordenes.filter(o=>["en_curso","fachada","inspeccion","ejecucion"].includes(o.estado)).length,         color:"#F59E0B", icon:"M13 10V3L4 14h7v7l9-11h-7z" },
+    { label:"CERRADAS",   val:ordenes.filter(o=>o.estado==="cerrada").length,                                                       color:"#06D6A0", icon:"M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" },
+    { label:"TOTAL",      val:ordenes.length,                                                                                       color:"#2563EB", icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
   ];
 
   return (
-    <div>
-      {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16 }}>
+    <div style={{ fontFamily: "'Poppins', sans-serif" }}>
+      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+
+      {/* HEADER */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h2 style={{ margin:0,fontSize:22,fontWeight:800 }}>Ordenes de Servicio</h2>
-          <p style={{ margin:0,fontSize:13,color:C.muted }}>{ordFiltradas.length} orden(es)</p>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.text }}>Ordenes de Servicio</h2>
+          <p style={{ margin: 0, fontSize: 12, color: C.muted }}>{ordFiltradas.length} orden(es) encontradas</p>
         </div>
-        <Btn onClick={()=>{ setFormOrden({referencia_id:"",tecnico_id:"",tipo_servicio:"montaje",cliente_nombre:"",cliente_direccion:"",cliente_telefono:"",num_factura:"",observaciones:"",fecha_programada:""}); setVista("nueva"); }} disabled={!canCreateServicios} title={!canCreateServicios ? "Este perfil no puede crear ordenes" : ""}>
-          + NUEVA ORDEN
+        <Btn
+          onClick={() => { setFormOrden({ referencia_id:"", tecnico_id:"", tipo_servicio:"montaje", cliente_nombre:"", cliente_direccion:"", cliente_telefono:"", num_factura:"", observaciones:"", fecha_programada:"" }); setVista("nueva"); }}
+          disabled={!canCreateServicios}
+          style={{ background: "#2563EB", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 600 }}
+        >
+          + Nueva Orden
         </Btn>
       </div>
 
       {/* KPIs */}
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16 }}>
-        {kpis.map(k=>(
-          <div key={k.label} style={{ padding:"12px 14px",borderRadius:10,
-            background:k.color+"10",border:`1px solid ${k.color}30` }}>
-            <div style={{ fontSize:24,fontWeight:900,color:k.color }}>{k.val}</div>
-            <div style={{ fontSize:10,fontWeight:700,color:k.color }}>{k.label}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 18 }}>
+        {kpis.map(k => (
+          <div key={k.label} style={{
+            padding: "14px 16px", borderRadius: 12,
+            background: k.color + "10", border: `1px solid ${k.color}30`,
+            display: "flex", alignItems: "center", gap: 12
+          }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: k.color + "20",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke={k.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d={k.icon} />
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: k.color, lineHeight: 1 }}>{k.val}</div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: k.color, opacity: 0.8 }}>{k.label}</div>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Filtros estado */}
-      <div style={{ display:"flex",gap:8,marginBottom:16,flexWrap:"wrap" }}>
-        <div onClick={()=>setFiltroEstado("")}
-          style={{ padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700,
-            background:filtroEstado===""?C.dark:C.bg,color:filtroEstado===""?"#fff":C.muted,
-            border:`1px solid ${filtroEstado===""?C.dark:C.border}` }}>Todos</div>
-        {Object.entries(ESTADO_ORDEN).map(([k,v])=>(
-          <div key={k} onClick={()=>setFiltroEstado(k)}
-            style={{ padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700,
-              background:filtroEstado===k?v.color:C.bg,color:filtroEstado===k?"#fff":C.muted,
-              border:`1px solid ${filtroEstado===k?v.color:C.border}` }}>{v.label}</div>
-        ))}
+      {/* BUSQUEDA + FILTROS */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+          <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}
+            width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke={C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input
+            placeholder="Buscar por cliente, consecutivo..."
+            style={{
+              width: "100%", padding: "9px 12px 9px 32px",
+              border: `1px solid ${C.border}`, borderRadius: 10,
+              fontSize: 12, fontFamily: "'Poppins', sans-serif",
+              background: C.card, color: C.text, outline: "none",
+              boxSizing: "border-box"
+            }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div onClick={() => setFiltroEstado("")} style={{
+            padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontSize: 11, fontWeight: 600,
+            background: filtroEstado === "" ? "#2563EB" : C.bg,
+            color: filtroEstado === "" ? "#fff" : C.muted,
+            border: `1px solid ${filtroEstado === "" ? "#2563EB" : C.border}`
+          }}>Todos</div>
+          {Object.entries(ESTADO_ORDEN).map(([k, v]) => (
+            <div key={k} onClick={() => setFiltroEstado(k)} style={{
+              padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontSize: 11, fontWeight: 600,
+              background: filtroEstado === k ? v.color : C.bg,
+              color: filtroEstado === k ? "#fff" : C.muted,
+              border: `1px solid ${filtroEstado === k ? v.color : C.border}`
+            }}>{v.label}</div>
+          ))}
+        </div>
       </div>
 
-      {/* Lista ordenes */}
+      {/* CARDS DE ORDENES */}
       {loading ? (
-        <div style={{ textAlign:"center",padding:40,color:C.muted }}>Cargando...</div>
+        <div style={{ textAlign: "center", padding: 48, color: C.muted, fontSize: 13 }}>Cargando ordenes...</div>
       ) : (
-        <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
-          {ordFiltradas.map((ord,i) => {
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
+          {ordFiltradas.map((ord, i) => {
             const est = ESTADO_ORDEN[ord.estado] || ESTADO_ORDEN.pendiente;
+            const mins = ord.duracion_min;
+            const durStr = mins ? `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m` : null;
             return (
-              <Card key={i} onClick={()=>abrirOrden(ord)}
-                style={{ cursor:"pointer",borderLeft:`4px solid ${est.color}` }}>
-                <div style={{ display:"flex",alignItems:"flex-start",gap:12 }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:4 }}>
-                      <span style={{ fontWeight:900,fontSize:15 }}>{ord.consecutivo}</span>
-                      <span style={{ padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,
-                        background:est.bg,color:est.color }}>{est.label}</span>
-                      <span style={{ padding:"2px 8px",borderRadius:10,fontSize:10,
-                        background:C.bg,border:`1px solid ${C.border}`,color:C.muted,textTransform:"capitalize" }}>
-                        {ord.tipo_servicio}
-                      </span>
-                    </div>
-                    <div style={{ fontWeight:700,fontSize:13 }}>{ord.cliente_nombre}</div>
-                    <div style={{ fontSize:12,color:C.muted }}>{ord.cliente_direccion}</div>
-                    <div style={{ fontSize:11,color:C.accent,fontWeight:600,marginTop:2 }}>
-                      {ord.referencia_nombre} {ord.num_factura?`| Fac: ${ord.num_factura}`:""}
-                    </div>
+              <div key={i} onClick={() => abrirOrden(ord)} style={{
+                background: C.card, borderRadius: 14, padding: "16px",
+                border: `1px solid ${C.border}`, cursor: "pointer",
+                borderTop: `3px solid ${est.color}`,
+                transition: "all 0.2s ease",
+              }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 4px 20px rgba(0,0,0,0.08)`; e.currentTarget.style.transform = "translateY(-2px)"; }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}
+              >
+                {/* Top row */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                      background: est.color + "15", color: est.color }}>{est.label}</span>
+                    <span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10,
+                      background: C.bg, border: `1px solid ${C.border}`, color: C.muted, textTransform: "capitalize" }}>
+                      {ord.tipo_servicio}
+                    </span>
                   </div>
-                  <div style={{ textAlign:"right",flexShrink:0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.muted }}>#{ord.consecutivo}</span>
+                </div>
+
+                {/* Cliente */}
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 2 }}>{ord.cliente_nombre}</div>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>{ord.cliente_direccion}</div>
+
+                {/* Referencia */}
+                <div style={{ padding: "6px 10px", borderRadius: 8, background: "#2563EB08",
+                  border: "1px solid #2563EB15", marginBottom: 10, fontSize: 11, color: "#2563EB", fontWeight: 600 }}>
+                  {ord.referencia_nombre}
+                  {ord.num_factura && <span style={{ color: C.muted, fontWeight: 400 }}> · Fac: {ord.num_factura}</span>}
+                </div>
+
+                {/* Footer */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 10, color: C.muted }}>
                     {ord.tecnico_nombre && (
-                      <div style={{ fontSize:11,color:C.muted,marginBottom:4 }}>{ord.tecnico_nombre}</div>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#8B5CF615",
+                          display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"/></svg>
+                        </div>
+                        {ord.tecnico_nombre}
+                      </span>
                     )}
-                    {ord.duracion_min && (
-                      <div style={{ fontSize:11,fontWeight:700,color:"#06D6A0" }}>
-                        {Math.floor(ord.duracion_min/60)}h {Math.round(ord.duracion_min%60)}m
-                      </div>
-                    )}
-                    <div style={{ fontSize:10,color:C.muted,marginTop:4 }}>
-                      {ord.fecha_programada||new Date(ord.fecha_creacion).toLocaleDateString()}
-                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {durStr && <span style={{ fontSize: 10, fontWeight: 700, color: "#06D6A0" }}>{durStr}</span>}
+                    <span style={{ fontSize: 10, color: C.muted }}>
+                      {ord.fecha_programada || (ord.fecha_creacion ? new Date(ord.fecha_creacion).toLocaleDateString("es-CO") : "")}
+                    </span>
                   </div>
                 </div>
-              </Card>
+              </div>
             );
           })}
-          {ordFiltradas.length===0 && (
-            <div style={{ textAlign:"center",padding:40,color:C.muted }}>
-              <div style={{ fontSize:36,marginBottom:10 }}>[ OS ]</div>
-              <div>No hay ordenes {filtroEstado?`en estado "${ESTADO_ORDEN[filtroEstado]?.label}"`:""}</div>
+          {ordFiltradas.length === 0 && (
+            <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 48, color: C.muted }}>
+              <div style={{ fontSize: 40, marginBottom: 10, opacity: 0.3 }}>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                </svg>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>No hay ordenes {filtroEstado ? `en estado "${ESTADO_ORDEN[filtroEstado]?.label}"` : ""}</div>
             </div>
           )}
         </div>
