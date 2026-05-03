@@ -161,7 +161,17 @@ const Layout = ({ children, user, onLogout, activePage, onNavigate }) => {
         }}>
           {menuCollapsed ? "☰" : "✕"}
         </button>
-        <div style={{ marginTop: isMobile ? 56 : 0, marginLeft: isMobile ? 0 : 56 }}>
+        <div style={{
+          marginTop: isMobile ? 56 : 0,
+          marginLeft: isMobile ? 0 : 56,
+          animation: "fadeIn 0.2s ease",
+        }}>
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(6px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
           {children}
         </div>
       </div>

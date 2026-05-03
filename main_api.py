@@ -2,6 +2,8 @@ import os
 import json
 from datetime import datetime, timedelta, time
 import re
+import hmac
+import hashlib
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -24,6 +26,39 @@ import requests
 
 load_dotenv()
 
+try:
+    from jose import jwt
+except ModuleNotFoundError:
+    jwt = None
+
+try:
+    from passlib.context import CryptContext
+except ModuleNotFoundError:
+    CryptContext = None
+
+JWT_SECRET = os.getenv("JWT_SECRET", "apex-dev-secret-2026-cambiar")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 8
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto") if CryptContext else None
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+def crear_token(data: dict) -> str:
+    payload = data.copy()
+    payload["exp"] = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
+    if jwt:
+        return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
+    payload["exp"] = int(payload["exp"].timestamp())
+    header_b64 = _b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+    payload_b64 = _b64url(json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8"))
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+    signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    return f"{header_b64}.{payload_b64}.{_b64url(signature)}"
+
 app = FastAPI(title="APEX ERP API", version="2.0")
 
 # ============================================================
@@ -36,11 +71,29 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # ============================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://apex-api-qa.netlify.app",
+        "https://apex-erp-prod.netlify.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Error interno del servidor. Intenta de nuevo."}
+    )
+
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "Recurso no encontrado"}
+    )
 
 # ============================================================
 # CONEXION A BASE DE DATOS (igual que tu db_manager.py)
@@ -77,7 +130,9 @@ def release_conn(conn):
                 conn.rollback()
             except Exception:
                 pass
-        get_pool().putconn(conn)
+            get_pool().putconn(conn)
+        else:
+            get_pool().putconn(conn)
     except Exception:
         try:
             conn.close()
@@ -1092,6 +1147,11 @@ def login(req: LoginRequest):
             if not row[9]:
                 raise HTTPException(status_code=403, detail="El rol asignado esta inactivo")
             permissions = parse_permissions(row[7]) if row[7] else get_fallback_permissions(row[2])
+            token = crear_token({
+                "sub": str(row[0]),
+                "username": row[3],
+                "rol": row[2]
+            })
             return {
                 "usuario": {
                     "id": row[0],
@@ -1102,7 +1162,8 @@ def login(req: LoginRequest):
                     "role_nombre": row[5],
                     "role_descripcion": row[6],
                     "permissions": permissions,
-                }
+                },
+                "token": token
             }
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     except HTTPException:

@@ -10,3 +10,5 @@ python-multipart==0.0.22
 pydantic==2.12.5
 websockets==15.0.1
 httpx==0.28.1
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
