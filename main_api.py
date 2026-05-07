@@ -2172,19 +2172,35 @@ def get_rutas(fecha: Optional[str] = None):
 # ASISTENCIA
 # ============================================================
 @app.get("/asistencia")
-def get_asistencia(fecha: Optional[str] = None, usuario: Optional[str] = None, hoy: Optional[str] = None):
+def get_asistencia(
+    fecha: Optional[str] = None,
+    fecha_inicio: Optional[str] = None,
+    fecha_fin: Optional[str] = None,
+    usuario: Optional[str] = None,
+    hoy: Optional[str] = None
+):
     try:
         conn = get_conn()
         cur = conn.cursor()
         f = fecha or datetime.now().strftime("%Y-%m-%d")
         if hoy == "1":
             f = datetime.now().strftime("%Y-%m-%d")
-        query = "SELECT usuario, vehiculo_placa, tipo_marca, hora, fecha FROM asistencia WHERE fecha::text = %s"
-        params = [f]
+        if fecha_inicio or fecha_fin:
+            query = "SELECT usuario, vehiculo_placa, tipo_marca, hora, fecha FROM asistencia WHERE 1=1"
+            params = []
+            if fecha_inicio:
+                query += " AND fecha >= %s::date"
+                params.append(fecha_inicio)
+            if fecha_fin:
+                query += " AND fecha < (%s::date + INTERVAL '1 day')"
+                params.append(fecha_fin)
+        else:
+            query = "SELECT usuario, vehiculo_placa, tipo_marca, hora, fecha FROM asistencia WHERE fecha::text = %s"
+            params = [f]
         if usuario:
             query += " AND usuario = %s"
             params.append(usuario)
-        query += " ORDER BY id ASC"
+        query += " ORDER BY fecha DESC, hora DESC, id DESC"
         cur.execute(query, params)
         rows = cur.fetchall()
         release_conn(conn)
