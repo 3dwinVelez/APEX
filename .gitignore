@@ -6,4 +6,6 @@ frontend/node_modules/
 frontend/.cache/
 frontend/build/
 *.cache
-.DS_Store
+.DS_Storeagents/venv/ 
+__pycache__/ 
+*.pyc 
