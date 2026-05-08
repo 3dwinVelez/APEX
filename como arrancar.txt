@@ -1,0 +1,20 @@
+uvicorn main_api:app --reload --port 8000
+PS C:\Users\USER>  cd C:\Users\USER\Desktop\apex\APEX-main\frontend
+PS C:\Users\USER\Desktop\apex\APEX-main\frontend>  npm start
+
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass--- primero
+.venv\Scripts\Activate.ps1  ----segundo
+
+
+
+
+
+PS C:\Users\USER\Desktop\apex\APEX-main> python -m venv .venv
+>> .venv\Scripts\Activate.ps1
+>> pip install -r requirements.txt
+>> python -m uvicorn main_api:app --reload --port 8000
+
+
+
+APXEMP013
